@@ -1,5 +1,9 @@
 module Message where
 
+import Debug.Trace
+
+import Text.Parsec (string)
+
 -- Messages from the client to the server
 data ServerMessage =
   Login String |
@@ -9,14 +13,14 @@ data ServerMessage =
   Part String String |
   Logout String |
   Invalid |
-  StopThread
+  StopThread deriving (Read, Show, Eq)
 
 -- Messages from the server to the client
 data ClientMessage =
   Ok |
   Error String |
   CPrivateMessage String String |
-  CRoomMessage String String String
+  CRoomMessage String String String deriving (Read, Eq)
 
 instance Show ClientMessage where
   show Ok = "OK\r\n"
@@ -25,4 +29,10 @@ instance Show ClientMessage where
   show (Error msg) = "ERROR " ++ msg ++ "\r\n"
   
 parseMsg :: String -> Maybe ServerMessage
-parseMsg msg = undefined
+parseMsg msg = Just $ read msg
+
+{-messageParser = do
+  s <- string "LOGIN "
+  name <- word
+  char '\n'
+  return name-}

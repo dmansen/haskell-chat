@@ -2,6 +2,7 @@ module Broadcast where
 
 import Control.Concurrent.STM
 import Data.Map as M
+import Debug.Trace
 import System.IO
 
 import Message
@@ -40,17 +41,18 @@ handlerThread :: UserStore ->
 handlerThread users rooms incoming outgoing = do
   let continuation = handlerThread users rooms incoming outgoing in do
     (handle, msg) <- atomically $ readTChan incoming
+    print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
       case msg of
-        Login name -> login users name handle continuation
-        SPrivateMessage from to msg -> privateMessage users from to msg continuation
-        SRoomMessage from room msg -> roomMessage rooms from room msg continuation
-        Join name room -> joinRoom users rooms name room continuation
+        Login name -> trace ("Login: " ++ name) $ login users name handle continuation
+        SPrivateMessage from to msg -> privateMessage users from to msg continuation outgoing
+        SRoomMessage from room msg -> roomMessage rooms from room msg continuation outgoing
+        Join name room -> trace ("Joining") joinRoom users rooms name room continuation
         Part name room -> partRoom users rooms name room continuation
         Logout name -> logout users rooms name
         Invalid -> return (Error "Invalid Command", continuation)
     atomically $ writeTChan outgoing (handle, responseMsg)
-    cont
+    trace "continuing" cont
   
 login :: UserStore -> 
          String -> 
@@ -74,7 +76,7 @@ logout userStore roomStore name = atomically $ do
   maybeUser <- maybeGetUser userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
-  return (Ok, removeUserFromRooms maybeUser userStore roomStore)
+  return (Ok, trace "handler dying" $ removeUserFromRooms maybeUser userStore roomStore)
 
 removeUserFromRooms :: Maybe User -> UserStore -> RoomStore -> IO ()
 removeUserFromRooms maybeUser userStore roomStore =
@@ -85,29 +87,34 @@ privateMessage :: UserStore ->
                   String -> 
                   String -> 
                   IO () ->
+                  TChan (Handle, ClientMessage) ->
                   IO (ClientMessage, IO ())
-privateMessage userStore fromName toName msg cont = do
+privateMessage userStore fromName toName msg cont chan = do
   maybeUser <- atomically $ maybeGetUser userStore toName
   case maybeUser of
-    Just toUser -> return (Ok, sendPrivateMessage toUser fromName msg >> cont)
+    Just toUser -> return (Ok, sendPrivateMessage toUser fromName msg chan >> cont)
     Nothing -> return (Error "User is not logged in", return ())
     
-sendPrivateMessage :: User -> String -> String -> IO ()
-sendPrivateMessage = undefined
+sendPrivateMessage :: User -> String -> String -> TChan (Handle, ClientMessage) -> IO ()
+sendPrivateMessage to fromName msg chan = atomically $
+  writeTChan chan (handle to, CPrivateMessage fromName msg)
 
-sendRoomMessage :: Room -> String -> String -> IO ()
-sendRoomMessage = undefined
+sendRoomMessage :: Room -> String -> String -> TChan (Handle, ClientMessage) -> IO ()
+sendRoomMessage room from msg chan = atomically $
+  (sequence (Prelude.map (\u -> writeTChan chan (handle u, CRoomMessage from (roomName room) msg)) (Prelude.filter (\u -> userName u /= from) (users room)))) >>
+  return ()
     
 roomMessage :: RoomStore -> 
                String -> 
                String -> 
                String -> 
                IO () ->
+               TChan (Handle, ClientMessage) ->
                IO (ClientMessage, IO ())
-roomMessage roomStore fromName toRoom msg cont = do
+roomMessage roomStore fromName toRoom msg cont chan = do
   maybeRoom <- atomically $ maybeGetRoom roomStore toRoom
   case maybeRoom of
-    Just room -> return (Ok, sendRoomMessage room fromName msg >> cont)
+    Just room -> return (Ok, sendRoomMessage room fromName msg chan >> cont)
     Nothing -> return (Error "Room does not exist", return ())
     
 joinRoom :: UserStore ->
@@ -122,8 +129,10 @@ joinRoom userStore roomStore userName roomName cont = do
     case maybeUser of
       Just user -> do
         room <- createRoomIfNeeded roomStore roomName
-        updateUser userStore (user { rooms = room : (rooms user) } )
-        updateRoom roomStore (room { users = user : (users room) } )
+        let newUser = (user { rooms = room : (rooms user) } )
+        let newRoom = (room { users = user : (users room) } )
+        updateUser userStore newUser
+        updateRoom roomStore newRoom
         return (Ok, cont)
       Nothing -> -- this is a bizarre situation
         return (Error "Somehow, you don't seem to be logged in. Disconnecting.", return ())
@@ -134,14 +143,16 @@ partRoom :: UserStore ->
             String ->
             IO () ->
             IO (ClientMessage, IO ())
-partRoom userStore roomStore userName roomName cont = do
+partRoom userStore roomStore uName rName cont = do
   atomically $ do
-    maybeUser <- maybeGetUser userStore userName
+    maybeUser <- maybeGetUser userStore uName
     case maybeUser of
       Just user -> do
-        room <- createRoomIfNeeded roomStore roomName
-        updateUser userStore (user { rooms = Prelude.filter (/= room) (rooms user) } )
-        updateRoom roomStore (room { users = Prelude.filter (/= user) (users room) } )
+        room <- createRoomIfNeeded roomStore rName
+        let newUser = (user { rooms = Prelude.filter (\r -> roomName r /= roomName room) (rooms user) } )
+        let newRoom = (room { users = Prelude.filter (\u -> userName u /= userName user) (users room) } )
+        updateUser userStore newUser
+        updateRoom roomStore newRoom
         return (Ok, cont)
       Nothing ->
         return (Error "Somehow, you don't seem to be logged in. Disconnecting.", return ())
@@ -158,7 +169,7 @@ updateUser userStore user = do
 updateRoom :: RoomStore -> 
               Room -> 
               STM ()
-updateRoom roomStore room = do
+updateRoom roomStore room = trace ("Updating room " ++ show room) $ do
   roomVar <- newTVar room
   roomStoreMap <- readTVar roomStore
   let newMap = M.insert (roomName room) roomVar roomStoreMap
