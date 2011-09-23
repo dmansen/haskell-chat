@@ -11,29 +11,35 @@ import System.IO
 import Broadcast
 import Message
 
+server :: IO ()
 server = withSocketsDo $ do
   userStore <- atomically $ newTVar M.empty
   roomStore <- atomically $ newTVar M.empty
   serverSock <- trace "Listening" $ listenOn (PortNumber 9000)
   waitForClients serverSock userStore roomStore
 
+waitForClients :: Socket -> UserStore -> RoomStore -> IO ()
 waitForClients serverSock userStore roomStore = do
   (handle, host, port) <- trace "accepting socket" $ accept serverSock
   spawnClientThreads handle userStore roomStore
   trace "waiting for clients" $ waitForClients serverSock userStore roomStore
 
+spawnClientThreads :: Handle -> UserStore -> RoomStore -> IO (ThreadId, ThreadId, ThreadId)
 spawnClientThreads handle userStore roomStore = do
   outgoing <- atomically $ newTChan
   incoming <- atomically $ newTChan
-  forkIO $ trace "forking listener" $ clientListener handle incoming ""
-  forkIO $ trace "forking message thread" $ clientMessageThread outgoing
-  forkIO $ trace "forking handler" $ dispatcherThread userStore roomStore incoming outgoing
+  listener <- forkIO $ trace "forking listener" $ clientListener handle incoming ""
+  messenger <- forkIO $ trace "forking message thread" $ clientMessageThread outgoing
+  dispatcher <- forkIO $ trace "forking dispatcher" $ dispatcherThread userStore roomStore incoming outgoing
+  return (listener, messenger, dispatcher)
   
+clientMessageThread :: TChan (Handle, ClientMessage) -> IO ()
 clientMessageThread chan = do
   (to, msg) <- atomically $ readTChan chan
   hPutStrLn to (show msg)
   clientMessageThread chan
-  
+
+clientListener :: Handle -> TChan (Handle, ServerMessage) -> String -> IO ()
 clientListener handle incoming current = do
   hSetBuffering handle LineBuffering
   line <- hGetLine handle
