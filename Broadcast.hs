@@ -80,7 +80,7 @@ logout userStore roomStore name handle = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
-  return (Ok, trace "handler dying" $ removeUserFromRooms maybeUser userStore roomStore >> hClose handle)
+  return (Ok, trace "handler dying" $ (atomically $ removeUserFromRooms maybeUser userStore roomStore) >> hClose handle)
 
 privateMessage :: UserStore -> 
                   String -> 
@@ -92,7 +92,7 @@ privateMessage :: UserStore ->
 privateMessage userStore fromName toName msg cont chan = do
   maybeUser <- atomically $ maybeGrabFromSTM userStore toName
   case maybeUser of
-    Just toUser -> return (Ok, sendPrivateMessage toUser fromName msg chan >> cont)
+    Just toUser -> return (Ok, (atomically $ sendPrivateMessage toUser fromName msg chan) >> cont)
     Nothing -> return (Error "User is not logged in", cont)
         
 roomMessage :: RoomStore -> 
@@ -105,7 +105,7 @@ roomMessage :: RoomStore ->
 roomMessage roomStore fromName toRoom msg cont chan = do
   maybeRoom <- atomically $ maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
-    Just room -> return (Ok, sendRoomMessage room fromName msg chan >> cont)
+    Just room -> return (Ok, (atomically $ sendRoomMessage room fromName msg chan ) >> cont)
     Nothing -> return (Error "Room does not exist", cont)
     
 joinRoom :: UserStore ->
@@ -154,24 +154,24 @@ partRoom userStore roomStore uName rName cont = do
       Nothing ->
         return (Error "Somehow, you don't seem to be logged in. This is a serious error.", cont)
         
-removeUserFromRooms :: Maybe User -> UserStore -> RoomStore -> IO ()
+removeUserFromRooms :: Maybe User -> UserStore -> RoomStore -> STM ()
 removeUserFromRooms maybeUser userStore roomStore =
   case maybeUser of
     Just user -> do
       let userRooms = rooms user
-      atomically (sequence $ Prelude.map (\newRoom -> updateSTM roomStore newRoom) $
+      (sequence $ Prelude.map (\newRoom -> updateSTM roomStore newRoom) $
         Prelude.map (\r -> r { 
                         users = Prelude.filter (\u -> 
                                          userName u /= userName user) $
                                 users r
                         }) userRooms) >> return ()
 
-sendPrivateMessage :: User -> String -> String -> TChan (Handle, ClientMessage) -> IO ()
-sendPrivateMessage to fromName msg chan = atomically $
+sendPrivateMessage :: User -> String -> String -> TChan (Handle, ClientMessage) -> STM ()
+sendPrivateMessage to fromName msg chan =
   writeTChan chan (handle to, CPrivateMessage fromName msg)
 
-sendRoomMessage :: Room -> String -> String -> TChan (Handle, ClientMessage) -> IO ()
-sendRoomMessage room from msg chan = atomically $
+sendRoomMessage :: Room -> String -> String -> TChan (Handle, ClientMessage) -> STM ()
+sendRoomMessage room from msg chan =
   (sequence (Prelude.map 
              (\u -> writeTChan chan 
                     (handle u, CRoomMessage from (roomName room) msg)) 
