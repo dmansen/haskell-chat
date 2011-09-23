@@ -18,13 +18,19 @@ server = withSocketsDo $ do
   serverSock <- trace "Listening" $ listenOn (PortNumber 9000)
   waitForClients serverSock userStore roomStore
 
-waitForClients :: Socket -> UserStore -> RoomStore -> IO ()
+waitForClients :: Socket ->
+                  UserStore ->
+                  RoomStore ->
+                  IO ()
 waitForClients serverSock userStore roomStore = do
   (handle, host, port) <- trace "accepting socket" $ accept serverSock
   spawnClientThreads handle userStore roomStore
   trace "waiting for clients" $ waitForClients serverSock userStore roomStore
 
-spawnClientThreads :: Handle -> UserStore -> RoomStore -> IO (ThreadId, ThreadId, ThreadId)
+spawnClientThreads :: Handle ->
+                      UserStore ->
+                      RoomStore ->
+                      IO (ThreadId, ThreadId, ThreadId)
 spawnClientThreads handle userStore roomStore = do
   outgoing <- atomically $ newTChan
   incoming <- atomically $ newTChan
@@ -32,14 +38,18 @@ spawnClientThreads handle userStore roomStore = do
   messenger <- forkIO $ trace "forking message thread" $ clientMessageThread outgoing
   dispatcher <- forkIO $ trace "forking dispatcher" $ dispatcherThread userStore roomStore incoming outgoing
   return (listener, messenger, dispatcher)
-  
-clientMessageThread :: TChan (Handle, ClientMessage) -> IO ()
+
+clientMessageThread :: TChan (Handle, ClientMessage) ->
+                       IO ()
 clientMessageThread chan = do
   (to, msg) <- atomically $ readTChan chan
   hPutStrLn to (show msg)
   clientMessageThread chan
 
-clientListener :: Handle -> TChan (Handle, ServerMessage) -> String -> IO ()
+clientListener :: Handle ->
+                  TChan (Handle, ServerMessage) ->
+                  String ->
+                  IO ()
 clientListener handle incoming current = do
   hSetBuffering handle LineBuffering
   line <- hGetLine handle

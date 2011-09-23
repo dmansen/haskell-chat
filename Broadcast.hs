@@ -23,7 +23,7 @@ data User = User {
 
 class StringKey a where
   stringKey :: a -> String
-  
+
 instance StringKey User where
   stringKey = userName
 
@@ -35,12 +35,12 @@ makeRoom name = Room { roomName = name, users = [] }
 
 type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
-  
-dispatcherThread :: UserStore -> 
-                 RoomStore -> 
-                 TChan (Handle, ServerMessage) ->
-                 TChan (Handle, ClientMessage) ->
-                 IO ()
+
+dispatcherThread :: UserStore ->
+                    RoomStore ->
+                    TChan (Handle, ServerMessage) ->
+                    TChan (Handle, ClientMessage) ->
+                    IO ()
 dispatcherThread users rooms incoming outgoing = do
   let continuation = dispatcherThread users rooms incoming outgoing in do
     (handle, msg) <- atomically $ readTChan incoming
@@ -56,10 +56,10 @@ dispatcherThread users rooms incoming outgoing = do
         Invalid -> return (Error "Invalid Command", continuation)
     atomically $ writeTChan outgoing (handle, responseMsg)
     trace "continuing" cont
-  
-login :: UserStore -> 
-         String -> 
-         Handle -> 
+
+login :: UserStore ->
+         String ->
+         Handle ->
          IO () ->
          IO (ClientMessage, IO ())
 login users name handle cont = atomically $ do
@@ -70,7 +70,7 @@ login users name handle cont = atomically $ do
         Nothing -> do
           updateSTM users (makeUser name handle)
           return (Ok, cont)
-          
+
 logout :: UserStore ->
           RoomStore ->
           String ->
@@ -82,10 +82,10 @@ logout userStore roomStore name handle = atomically $ do
   writeTVar userStore (M.delete name userMap)
   return (Ok, trace "handler dying" $ (atomically $ removeUserFromRooms maybeUser userStore roomStore) >> hClose handle)
 
-privateMessage :: UserStore -> 
-                  String -> 
-                  String -> 
-                  String -> 
+privateMessage :: UserStore ->
+                  String ->
+                  String ->
+                  String ->
                   IO () ->
                   TChan (Handle, ClientMessage) ->
                   IO (ClientMessage, IO ())
@@ -94,11 +94,11 @@ privateMessage userStore fromName toName msg cont chan = do
   case maybeUser of
     Just toUser -> return (Ok, (atomically $ sendPrivateMessage toUser fromName msg chan) >> cont)
     Nothing -> return (Error "User is not logged in", cont)
-        
-roomMessage :: RoomStore -> 
-               String -> 
-               String -> 
-               String -> 
+
+roomMessage :: RoomStore ->
+               String ->
+               String ->
+               String ->
                IO () ->
                TChan (Handle, ClientMessage) ->
                IO (ClientMessage, IO ())
@@ -107,7 +107,7 @@ roomMessage roomStore fromName toRoom msg cont chan = do
   case maybeRoom of
     Just room -> return (Ok, (atomically $ sendRoomMessage room fromName msg chan ) >> cont)
     Nothing -> return (Error "Room does not exist", cont)
-    
+
 joinRoom :: UserStore ->
             RoomStore ->
             String ->
@@ -127,7 +127,7 @@ joinRoom userStore roomStore userName roomName cont = do
         return (Ok, cont)
       Nothing -> -- this is a bizarre situation
         return (Error "Somehow, you don't seem to be logged in. This is a serious error.", cont)
-  
+
 partRoom :: UserStore ->
             RoomStore ->
             String ->
@@ -140,45 +140,56 @@ partRoom userStore roomStore uName rName cont = do
     case maybeUser of
       Just user -> do
         room <- createRoomIfNeeded roomStore rName
-        let newUser = (user { rooms = Prelude.filter 
-                                        (\r -> roomName r /= roomName room) 
-                                        (rooms user) 
+        let newUser = (user { rooms = Prelude.filter
+                                        (\r -> roomName r /= roomName room)
+                                        (rooms user)
                             })
-        let newRoom = (room { users = Prelude.filter 
-                                        (\u -> userName u /= userName user) 
-                                        (users room) 
+        let newRoom = (room { users = Prelude.filter
+                                        (\u -> userName u /= userName user)
+                                        (users room)
                             })
         updateSTM userStore newUser
         updateSTM roomStore newRoom
         return (Ok, cont)
       Nothing ->
         return (Error "Somehow, you don't seem to be logged in. This is a serious error.", cont)
-        
-removeUserFromRooms :: Maybe User -> UserStore -> RoomStore -> STM ()
+
+removeUserFromRooms :: Maybe User ->
+                       UserStore ->
+                       RoomStore ->
+                       STM ()
 removeUserFromRooms maybeUser userStore roomStore =
   case maybeUser of
     Just user -> do
       let userRooms = rooms user
       (sequence $ Prelude.map (\newRoom -> updateSTM roomStore newRoom) $
-        Prelude.map (\r -> r { 
-                        users = Prelude.filter (\u -> 
+        Prelude.map (\r -> r {
+                        users = Prelude.filter (\u ->
                                          userName u /= userName user) $
                                 users r
                         }) userRooms) >> return ()
 
-sendPrivateMessage :: User -> String -> String -> TChan (Handle, ClientMessage) -> STM ()
+sendPrivateMessage :: User ->
+                      String ->
+                      String ->
+                      TChan (Handle, ClientMessage) ->
+                      STM ()
 sendPrivateMessage to fromName msg chan =
   writeTChan chan (handle to, CPrivateMessage fromName msg)
 
-sendRoomMessage :: Room -> String -> String -> TChan (Handle, ClientMessage) -> STM ()
+sendRoomMessage :: Room ->
+                   String ->
+                   String ->
+                   TChan (Handle, ClientMessage) ->
+                   STM ()
 sendRoomMessage room from msg chan =
-  (sequence (Prelude.map 
-             (\u -> writeTChan chan 
-                    (handle u, CRoomMessage from (roomName room) msg)) 
+  (sequence (Prelude.map
+             (\u -> writeTChan chan
+                    (handle u, CRoomMessage from (roomName room) msg))
              (Prelude.filter (\u -> userName u /= from) (users room))
             )) >>
   return ()
-        
+
 createRoomIfNeeded :: RoomStore ->
                       String ->
                       STM Room
@@ -186,20 +197,25 @@ createRoomIfNeeded roomStore name = do
   roomStoreMap <- readTVar roomStore
   case M.lookup name roomStoreMap of
     Just existing -> return existing
-    Nothing -> 
+    Nothing ->
       do
         let newRoom = makeRoom name
         let newMap = M.insert (roomName newRoom) newRoom roomStoreMap
         writeTVar roomStore newMap
         return newRoom
 
-updateSTM :: (StringKey a) => TVar (Map String a) -> a -> STM ()
+updateSTM :: (StringKey a) =>
+             TVar (Map String a) ->
+             a ->
+             STM ()
 updateSTM store a = do
   map <- readTVar store
   let newMap = M.insert (stringKey a) a map
   writeTVar store newMap
-    
-maybeGrabFromSTM :: TVar (Map String a) -> String -> STM (Maybe a)
+
+maybeGrabFromSTM :: TVar (Map String a) ->
+                    String ->
+                    STM (Maybe a)
 maybeGrabFromSTM mapVar name = do
   map <- readTVar mapVar
   case M.lookup name map of
