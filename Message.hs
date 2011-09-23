@@ -3,8 +3,8 @@ module Message where
 -- Messages from the client to the server
 data ServerMessage =
   Login String |
-  PrivateMessage String String String |
-  RoomMessage String String String |
+  SPrivateMessage String String String |
+  SRoomMessage String String String |
   Join String String |
   Part String String |
   Logout String |
@@ -15,11 +15,11 @@ data ServerMessage =
 data ClientMessage =
   Ok |
   Error String |
-  PrivateMessage String String |
-  RoomMessage String String String
+  CPrivateMessage String String |
+  CRoomMessage String String String
 
 instance Show ClientMessage where
   show Ok = "OK\r\n"
-  show (PrivateMessage from msg) = "GOTUSERMSG " ++ from ++ " " ++ msg ++ "\r\n"
-  show (RoomMessage from room msg) = "GOTROOMMSG " ++ from ++ " #" ++ room ++ " " ++ msg ++ "\r\n"
+  show (CPrivateMessage from msg) = "GOTUSERMSG " ++ from ++ " " ++ msg ++ "\r\n"
+  show (CRoomMessage from room msg) = "GOTROOMMSG " ++ from ++ " #" ++ room ++ " " ++ msg ++ "\r\n"
   show (Error msg) = "ERROR " ++ msg ++ "\r\n"
