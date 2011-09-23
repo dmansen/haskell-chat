@@ -36,33 +36,50 @@ makeRoom name = Room { roomName = name, users = [] }
 type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
 
+loginThread :: UserStore ->
+                    RoomStore ->
+                    TChan (Handle, ServerMessage) ->
+                    TChan (Handle, ClientMessage) ->
+                    IO ()
+loginThread users rooms incoming outgoing = do
+  let repeat = loginThread users rooms incoming outgoing in do
+    (handle, msg) <- atomically $ readTChan incoming
+    (responseMsg, cont) <- do
+      case msg of
+        Login name ->
+          return (Ok, dispatcherThread users rooms incoming outgoing)
+        otherwise ->
+          return (Error "Not logged in", repeat)
+    atomically $ writeTChan outgoing (handle, responseMsg)
+    cont
+
 dispatcherThread :: UserStore ->
                     RoomStore ->
                     TChan (Handle, ServerMessage) ->
                     TChan (Handle, ClientMessage) ->
                     IO ()
 dispatcherThread users rooms incoming outgoing = do
-  let continuation = dispatcherThread users rooms incoming outgoing in do
+  let repeat = dispatcherThread users rooms incoming outgoing in do
     (handle, msg) <- atomically $ readTChan incoming
     print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
       case msg of
         Login name ->
-          login users name handle continuation
+          return (Error "Already logged in", repeat)
         SPrivateMessage from to msg ->
-          privateMessage users from to msg continuation outgoing
+          privateMessage users from to msg repeat outgoing
         SRoomMessage from room msg ->
-          roomMessage rooms from room msg continuation outgoing
+          roomMessage rooms from room msg repeat outgoing
         Join name room ->
-          joinRoom users rooms name room continuation
+          joinRoom users rooms name room repeat
         Part name room ->
-          partRoom users rooms name room continuation
+          partRoom users rooms name room repeat
         Logout name ->
           logout users rooms name handle
         Invalid ->
-          return (Error "Invalid Command", continuation)
+          return (Error "Invalid Command", repeat)
     atomically $ writeTChan outgoing (handle, responseMsg)
-    trace "continuing" cont
+    cont
 
 login :: UserStore ->
          String ->
