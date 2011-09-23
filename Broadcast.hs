@@ -21,11 +21,20 @@ data User = User {
   rooms :: [Room]
 } deriving (Show, Eq)
 
+class StringKey a where
+  stringKey :: a -> String
+  
+instance StringKey User where
+  stringKey = userName
+
+instance StringKey Room where
+  stringKey = roomName
+
 makeUser name handle = User { userName = name, handle = handle, rooms = [] }
 makeRoom name = Room { roomName = name, users = [] }
 
-type UserStore = TVar (Map String (TVar User))
-type RoomStore = TVar (Map String (TVar Room))
+type UserStore = TVar (Map String User)
+type RoomStore = TVar (Map String Room)
 
 sendMessage :: User -> ClientMessage -> IO ()
 sendMessage to msg = do
@@ -60,12 +69,12 @@ login :: UserStore ->
          IO () ->
          IO (ClientMessage, IO ())
 login users name handle cont = atomically $ do
-      user <- maybeGetUser users name
+      user <- maybeGrabFromSTM users name
       case user of
         Just u ->
           return (Error "Username already in use", return ())
         Nothing -> do
-          updateUser users (makeUser name handle)
+          updateSTM users (makeUser name handle)
           return (Ok, cont)
           
 logout :: UserStore ->
@@ -73,7 +82,7 @@ logout :: UserStore ->
           String ->
           IO (ClientMessage, IO ())
 logout userStore roomStore name = atomically $ do
-  maybeUser <- maybeGetUser userStore name
+  maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
   return (Ok, trace "handler dying" $ removeUserFromRooms maybeUser userStore roomStore)
@@ -90,7 +99,7 @@ privateMessage :: UserStore ->
                   TChan (Handle, ClientMessage) ->
                   IO (ClientMessage, IO ())
 privateMessage userStore fromName toName msg cont chan = do
-  maybeUser <- atomically $ maybeGetUser userStore toName
+  maybeUser <- atomically $ maybeGrabFromSTM userStore toName
   case maybeUser of
     Just toUser -> return (Ok, sendPrivateMessage toUser fromName msg chan >> cont)
     Nothing -> return (Error "User is not logged in", return ())
@@ -112,7 +121,7 @@ roomMessage :: RoomStore ->
                TChan (Handle, ClientMessage) ->
                IO (ClientMessage, IO ())
 roomMessage roomStore fromName toRoom msg cont chan = do
-  maybeRoom <- atomically $ maybeGetRoom roomStore toRoom
+  maybeRoom <- atomically $ maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
     Just room -> return (Ok, sendRoomMessage room fromName msg chan >> cont)
     Nothing -> return (Error "Room does not exist", return ())
@@ -125,14 +134,14 @@ joinRoom :: UserStore ->
             IO (ClientMessage, IO ())
 joinRoom userStore roomStore userName roomName cont = do
   atomically $ do
-    maybeUser <- maybeGetUser userStore userName
+    maybeUser <- maybeGrabFromSTM userStore userName
     case maybeUser of
       Just user -> do
         room <- createRoomIfNeeded roomStore roomName
         let newUser = (user { rooms = room : (rooms user) } )
         let newRoom = (room { users = user : (users room) } )
-        updateUser userStore newUser
-        updateRoom roomStore newRoom
+        updateSTM userStore newUser
+        updateSTM roomStore newRoom
         return (Ok, cont)
       Nothing -> -- this is a bizarre situation
         return (Error "Somehow, you don't seem to be logged in. Disconnecting.", return ())
@@ -145,35 +154,29 @@ partRoom :: UserStore ->
             IO (ClientMessage, IO ())
 partRoom userStore roomStore uName rName cont = do
   atomically $ do
-    maybeUser <- maybeGetUser userStore uName
+    maybeUser <- maybeGrabFromSTM userStore uName
     case maybeUser of
       Just user -> do
         room <- createRoomIfNeeded roomStore rName
-        let newUser = (user { rooms = Prelude.filter (\r -> roomName r /= roomName room) (rooms user) } )
-        let newRoom = (room { users = Prelude.filter (\u -> userName u /= userName user) (users room) } )
-        updateUser userStore newUser
-        updateRoom roomStore newRoom
+        let newUser = (user { rooms = Prelude.filter 
+                                        (\r -> roomName r /= roomName room) 
+                                        (rooms user) 
+                            })
+        let newRoom = (room { users = Prelude.filter 
+                                        (\u -> userName u /= userName user) 
+                                        (users room) 
+                            })
+        updateSTM userStore newUser
+        updateSTM roomStore newRoom
         return (Ok, cont)
       Nothing ->
         return (Error "Somehow, you don't seem to be logged in. Disconnecting.", return ())
 
-updateUser :: UserStore -> 
-              User -> 
-              STM ()
-updateUser userStore user = do
-  userVar <- newTVar user
-  userStoreMap <- readTVar userStore
-  let newMap = M.insert (userName user) userVar userStoreMap
-  writeTVar userStore newMap
-  
-updateRoom :: RoomStore -> 
-              Room -> 
-              STM ()
-updateRoom roomStore room = trace ("Updating room " ++ show room) $ do
-  roomVar <- newTVar room
-  roomStoreMap <- readTVar roomStore
-  let newMap = M.insert (roomName room) roomVar roomStoreMap
-  writeTVar roomStore newMap
+updateSTM :: (StringKey a) => TVar (Map String a) -> a -> STM ()
+updateSTM store a = do
+  map <- readTVar store
+  let newMap = M.insert (stringKey a) a map
+  writeTVar store newMap
   
 createRoomIfNeeded :: RoomStore ->
                       String ->
@@ -181,29 +184,17 @@ createRoomIfNeeded :: RoomStore ->
 createRoomIfNeeded roomStore name = do
   roomStoreMap <- readTVar roomStore
   case M.lookup name roomStoreMap of
-    Just existing -> readTVar existing
+    Just existing -> return existing
     Nothing -> 
       do
         let newRoom = makeRoom name
-        roomVar <- newTVar newRoom
-        let newMap = M.insert (roomName newRoom) roomVar roomStoreMap
+        let newMap = M.insert (roomName newRoom) newRoom roomStoreMap
         writeTVar roomStore newMap
         return newRoom
   
-maybeGetRoom :: RoomStore -> String -> STM (Maybe Room)
-maybeGetRoom rooms name = do
-  roomMap <- readTVar rooms
-  case M.lookup name roomMap of
-    Just roomVar -> do
-      room <- readTVar roomVar
-      return (return room)
-    Nothing -> return Nothing
-   
-maybeGetUser :: UserStore -> String -> STM (Maybe User)
-maybeGetUser userStore name = do
-  userMap <- readTVar userStore
-  case M.lookup name userMap of
-    Just userVar -> do
-      user <- readTVar userVar
-      return (Just user)
+maybeGrabFromSTM :: TVar (Map String a) -> String -> STM (Maybe a)
+maybeGrabFromSTM mapVar name = do
+  map <- readTVar mapVar
+  case M.lookup name map of
+    Just a -> return (return a)
     Nothing -> return Nothing
