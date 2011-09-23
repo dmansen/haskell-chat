@@ -2,27 +2,32 @@ module Server where
 
 import Control.Concurrent
 import Control.Concurrent.STM
-
+import Data.Map as M
 import Network
 import System.IO
 
 import Broadcast
+import Message
 
 main = do
   incoming <- atomically $ newTChan
-  outgoing <- atomically $ newTChan
-  userStore <- atomically $ newTVar
-  roomStore <- atomically $ newTVar
-  forkIO $ clientMessageThread incoming outgoing
-  forkIO $ waitForClients userStore roomStore incoming outgoing
+  userStore <- atomically $ newTVar M.empty
+  roomStore <- atomically $ newTVar M.empty
+  forkIO $ waitForClients userStore roomStore incoming
 
-waitForClients userStore roomStore incoming outgoing = withSocketsDo $ do
+waitForClients userStore roomStore incoming = withSocketsDo $ do
   serverSock <- listenOn (PortNumber 5)
   (handle, host, port) <- accept serverSock
-  forkIO $ clientListener handle incoming outgoing ""
+  waitForClients userStore roomStore incoming
+
+spawnClientThreads handle broadcast userStore roomStore = do
+  outgoing <- atomically $ newTChan
+  forkIO $ clientListener handle broadcast ""
+  forkIO $ clientMessageThread outgoing
+  forkIO $ handlerThread userStore roomStore broadcast outgoing
   
 clientMessageThread chan = do
-  (to, msg) <- readTChan chan
+  (to, msg) <- atomically $ readTChan chan
   hPutStrLn to (show msg)
   
 clientListener handle incoming current = do
@@ -30,5 +35,5 @@ clientListener handle incoming current = do
   line <- hGetLine handle
   let soFar = current ++ line
   case parseMsg line of
-    Just msg -> atomically $ writeTChan (handle, parseMsg soFar)
+    Just msg -> atomically $ writeTChan incoming (handle, msg)
     Nothing -> clientListener handle incoming soFar

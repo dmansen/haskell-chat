@@ -24,5 +24,5 @@ instance Show ClientMessage where
   show (CRoomMessage from room msg) = "GOTROOMMSG " ++ from ++ " #" ++ room ++ " " ++ msg ++ "\r\n"
   show (Error msg) = "ERROR " ++ msg ++ "\r\n"
   
-parseMsg :: String -> ServerMessage
+parseMsg :: String -> Maybe ServerMessage
 parseMsg msg = undefined
