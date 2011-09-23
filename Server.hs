@@ -27,17 +27,15 @@ waitForClients :: Socket ->
                   RoomStore ->
                   IO ()
 waitForClients serverSock userStore roomStore =
-    E.handle
-    ((\_ -> waitForClients
-              serverSock
-              userStore
-              roomStore) :: IOException -> IO ())
     (do
-      (handle, host, port) <- trace "accepting socket" $ accept serverSock
+      (handle, host, port) <- accept serverSock
       spawnClientThreads handle userStore roomStore
-      trace "waiting for clients" $
-        waitForClients serverSock userStore roomStore)
-
+      waitForClients serverSock userStore roomStore)
+    `E.catch`
+    ((\_ -> waitForClients
+            serverSock
+            userStore
+            roomStore) :: IOException -> IO ())
 
 spawnClientThreads :: Handle ->
                       UserStore ->
