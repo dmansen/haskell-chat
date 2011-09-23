@@ -47,13 +47,20 @@ dispatcherThread users rooms incoming outgoing = do
     print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
       case msg of
-        Login name -> trace ("Login: " ++ name) $ login users name handle continuation
-        SPrivateMessage from to msg -> privateMessage users from to msg continuation outgoing
-        SRoomMessage from room msg -> roomMessage rooms from room msg continuation outgoing
-        Join name room -> trace ("Joining") joinRoom users rooms name room continuation
-        Part name room -> partRoom users rooms name room continuation
-        Logout name -> logout users rooms name handle
-        Invalid -> return (Error "Invalid Command", continuation)
+        Login name ->
+          login users name handle continuation
+        SPrivateMessage from to msg ->
+          privateMessage users from to msg continuation outgoing
+        SRoomMessage from room msg ->
+          roomMessage rooms from room msg continuation outgoing
+        Join name room ->
+          joinRoom users rooms name room continuation
+        Part name room ->
+          partRoom users rooms name room continuation
+        Logout name ->
+          logout users rooms name handle
+        Invalid ->
+          return (Error "Invalid Command", continuation)
     atomically $ writeTChan outgoing (handle, responseMsg)
     trace "continuing" cont
 
@@ -80,7 +87,10 @@ logout userStore roomStore name handle = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
-  return (Ok, trace "handler dying" $ (atomically $ removeUserFromRooms maybeUser userStore roomStore) >> hClose handle)
+  return (Ok,
+          (atomically $
+            removeUserFromRooms maybeUser userStore roomStore) >>
+            hClose handle)
 
 privateMessage :: UserStore ->
                   String ->
@@ -90,9 +100,13 @@ privateMessage :: UserStore ->
                   TChan (Handle, ClientMessage) ->
                   IO (ClientMessage, IO ())
 privateMessage userStore fromName toName msg cont chan = do
-  maybeUser <- atomically $ maybeGrabFromSTM userStore toName
+  maybeUser <- atomically $
+               maybeGrabFromSTM userStore toName
   case maybeUser of
-    Just toUser -> return (Ok, (atomically $ sendPrivateMessage toUser fromName msg chan) >> cont)
+    Just toUser -> return (Ok,
+                           (atomically $
+                            sendPrivateMessage toUser fromName msg chan) >>
+                           cont)
     Nothing -> return (Error "User is not logged in", cont)
 
 roomMessage :: RoomStore ->
@@ -105,7 +119,10 @@ roomMessage :: RoomStore ->
 roomMessage roomStore fromName toRoom msg cont chan = do
   maybeRoom <- atomically $ maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
-    Just room -> return (Ok, (atomically $ sendRoomMessage room fromName msg chan ) >> cont)
+    Just room -> return (Ok,
+                         (atomically $
+                          sendRoomMessage room fromName msg chan ) >>
+                         cont)
     Nothing -> return (Error "Room does not exist", cont)
 
 joinRoom :: UserStore ->
