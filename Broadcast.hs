@@ -171,13 +171,7 @@ partRoom userStore roomStore uName rName cont = do
         return (Ok, cont)
       Nothing ->
         return (Error "Somehow, you don't seem to be logged in. Disconnecting.", return ())
-
-updateSTM :: (StringKey a) => TVar (Map String a) -> a -> STM ()
-updateSTM store a = do
-  map <- readTVar store
-  let newMap = M.insert (stringKey a) a map
-  writeTVar store newMap
-  
+        
 createRoomIfNeeded :: RoomStore ->
                       String ->
                       STM Room
@@ -191,7 +185,13 @@ createRoomIfNeeded roomStore name = do
         let newMap = M.insert (roomName newRoom) newRoom roomStoreMap
         writeTVar roomStore newMap
         return newRoom
-  
+
+updateSTM :: (StringKey a) => TVar (Map String a) -> a -> STM ()
+updateSTM store a = do
+  map <- readTVar store
+  let newMap = M.insert (stringKey a) a map
+  writeTVar store newMap
+    
 maybeGrabFromSTM :: TVar (Map String a) -> String -> STM (Maybe a)
 maybeGrabFromSTM mapVar name = do
   map <- readTVar mapVar
