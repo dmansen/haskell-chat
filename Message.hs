@@ -23,3 +23,6 @@ instance Show ClientMessage where
   show (CPrivateMessage from msg) = "GOTUSERMSG " ++ from ++ " " ++ msg ++ "\r\n"
   show (CRoomMessage from room msg) = "GOTROOMMSG " ++ from ++ " #" ++ room ++ " " ++ msg ++ "\r\n"
   show (Error msg) = "ERROR " ++ msg ++ "\r\n"
+  
+parseMsg :: String -> ServerMessage
+parseMsg msg = undefined
