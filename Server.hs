@@ -27,7 +27,7 @@ spawnClientThreads handle userStore roomStore = do
   incoming <- atomically $ newTChan
   forkIO $ trace "forking listener" $ clientListener handle incoming ""
   forkIO $ trace "forking message thread" $ clientMessageThread outgoing
-  forkIO $ trace "forking handler" $ handlerThread userStore roomStore incoming outgoing
+  forkIO $ trace "forking handler" $ dispatcherThread userStore roomStore incoming outgoing
   
 clientMessageThread chan = do
   (to, msg) <- atomically $ readTChan chan

@@ -42,13 +42,13 @@ sendMessage to msg = do
   hPutStr hdl ((show msg) ++ "\r\n")
   return ()
   
-handlerThread :: UserStore -> 
+dispatcherThread :: UserStore -> 
                  RoomStore -> 
                  TChan (Handle, ServerMessage) ->
                  TChan (Handle, ClientMessage) ->
                  IO ()
-handlerThread users rooms incoming outgoing = do
-  let continuation = handlerThread users rooms incoming outgoing in do
+dispatcherThread users rooms incoming outgoing = do
+  let continuation = dispatcherThread users rooms incoming outgoing in do
     (handle, msg) <- atomically $ readTChan incoming
     print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
@@ -58,7 +58,7 @@ handlerThread users rooms incoming outgoing = do
         SRoomMessage from room msg -> roomMessage rooms from room msg continuation outgoing
         Join name room -> trace ("Joining") joinRoom users rooms name room continuation
         Part name room -> partRoom users rooms name room continuation
-        Logout name -> logout users rooms name
+        Logout name -> logout users rooms name handle
         Invalid -> return (Error "Invalid Command", continuation)
     atomically $ writeTChan outgoing (handle, responseMsg)
     trace "continuing" cont
@@ -80,16 +80,25 @@ login users name handle cont = atomically $ do
 logout :: UserStore ->
           RoomStore ->
           String ->
+          Handle ->
           IO (ClientMessage, IO ())
-logout userStore roomStore name = atomically $ do
+logout userStore roomStore name handle = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
-  return (Ok, trace "handler dying" $ removeUserFromRooms maybeUser userStore roomStore)
+  return (Ok, trace "handler dying" $ removeUserFromRooms maybeUser userStore roomStore >> hClose handle)
 
 removeUserFromRooms :: Maybe User -> UserStore -> RoomStore -> IO ()
 removeUserFromRooms maybeUser userStore roomStore =
-  return ()
+  case maybeUser of
+    Just user -> do
+      let userRooms = rooms user
+      atomically (sequence $ Prelude.map (\newRoom -> updateSTM roomStore newRoom) $
+        Prelude.map (\r -> r { 
+                        users = Prelude.filter (\u -> 
+                                         userName u /= userName user) $
+                                users r
+                        }) userRooms) >> return ()
 
 privateMessage :: UserStore -> 
                   String -> 
@@ -110,7 +119,11 @@ sendPrivateMessage to fromName msg chan = atomically $
 
 sendRoomMessage :: Room -> String -> String -> TChan (Handle, ClientMessage) -> IO ()
 sendRoomMessage room from msg chan = atomically $
-  (sequence (Prelude.map (\u -> writeTChan chan (handle u, CRoomMessage from (roomName room) msg)) (Prelude.filter (\u -> userName u /= from) (users room)))) >>
+  (sequence (Prelude.map 
+             (\u -> writeTChan chan 
+                    (handle u, CRoomMessage from (roomName room) msg)) 
+             (Prelude.filter (\u -> userName u /= from) (users room))
+            )) >>
   return ()
     
 roomMessage :: RoomStore -> 
