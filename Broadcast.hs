@@ -15,10 +15,14 @@ import Message
 -- This module is responsible for broadcasting messages
 -- to the proper users.
 
+-- send a list of messages. this spawns another thread so that
+-- our main handler thread doesn't need to wait for it to finish.
+-- uses safePutMsg to ensure that the messages are sent in the
+-- proper order.
 sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
 sendMessages = forkIO . foldr (>>) (return ()) . map safePutMsg
 
--- Each user has an MVar () which is used as a mutex to
+-- each user has an MVar () which is used as a mutex to
 -- ensure no interleaving of messages.
 safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
 safePutMsg ((handle, lock), msg) = do
@@ -32,6 +36,7 @@ safePutMsg ((handle, lock), msg) = do
 unsafePutMsg :: Handle -> ClientMessage -> IO ()
 unsafePutMsg handle msg = hPutStrLn handle (show msg)
 
+-- grabs the next message from the handle and parses it
 readMessage :: Handle -> IO ServerMessage
 readMessage handle = do
   line <- hGetLine handle
@@ -45,6 +50,7 @@ loginThreadWrapper userStore roomStore handle =
   `finally`
   loginExceptionHandler handle
 
+-- waits on the provided handle for the user's login message
 loginThread :: UserStore ->
                RoomStore ->
                Handle ->
@@ -66,6 +72,7 @@ loginThread users rooms handle = do
     unsafePutMsg handle responseMsg
     cont
 
+-- make sure we always close out the user's handle
 loginExceptionHandler :: Handle -> IO ()
 loginExceptionHandler handle = trace "Doing final cleanup." $ hClose handle
 
@@ -98,12 +105,16 @@ dispatcherThread user users rooms handle = do
         Part room ->
           partRoom users rooms name room repeat
         Logout ->
-          logout users rooms name
+          -- we don't need to call logout explicity
+          -- (see the finally block above, and exception handler below)
+          return (Ok, return ())
         Invalid err ->
           return (Error ("Invalid Command: " ++ err), repeat)
     sendMessages [(connection user, responseMsg)]
     cont
 
+-- make sure we always go through the logout procedure,
+-- even in the event of an error
 dispatcherExceptionHandler :: User ->
                               UserStore ->
                               RoomStore ->
