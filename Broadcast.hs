@@ -18,17 +18,25 @@ import Message
 sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
 sendMessages = forkIO . foldr (>>) (return ()) . map safePutMsg
 
+-- Each user has an MVar () which is used as a mutex to
+-- ensure no interleaving of messages.
 safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
 safePutMsg ((handle, lock), msg) = do
   takeMVar lock
   hPutStrLn handle (show msg)
   putMVar lock ()
 
+-- puts a message on a handle without a lock. used
+-- in the login thread (since we haven't created an
+-- MVar for them yet)
+unsafePutMsg :: Handle -> ClientMessage -> IO ()
+unsafePutMsg handle msg = hPutStrLn handle (show msg)
+
 readMessage :: Handle -> IO ServerMessage
 readMessage handle = do
   line <- hGetLine handle
   let msg = parseMsg line in return msg
-  
+
 -- wrap the thread in a function - necessary because loginThread uses
 -- recursion to continue. if we didn't wrap this, the function would
 -- add another finally clause every time the function was called.
@@ -55,7 +63,7 @@ loginThread users rooms handle = do
               return (Error "Username already in use", repeat)
         otherwise ->
           return (Error "Not logged in", repeat)
-    hPutStrLn handle (show responseMsg)
+    unsafePutMsg handle responseMsg
     cont
 
 loginExceptionHandler :: Handle -> IO ()
