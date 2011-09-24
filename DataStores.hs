@@ -60,10 +60,10 @@ removeUserFromRooms maybeUser userStore roomStore =
       -- of actions.
       foldr (>>) (return ()) $ map (\newRoom -> updateSTM roomStore newRoom) $
         map (\r -> r {
-                        users = filter (\u ->
-                                         userName u /= userName user) $
-                                users r
-                        }) userRooms
+                users = filter (\u ->
+                                 userName u /= userName user) $
+                        users r
+                }) userRooms
     Nothing -> return ()
 
 updateSTM :: (StringKey a) =>
