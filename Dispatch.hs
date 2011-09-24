@@ -101,7 +101,7 @@ dispatcherThread :: User ->
                     IO ()
 dispatcherThread user users rooms handle = do
   let repeat = dispatcherThread user users rooms handle in do
-    msg <- readMessage handle
+    msg <- unsafeReadMessage handle
     (responseMsg, cont) <- atomically $ do
       let name = (userName user)
       case msg of
