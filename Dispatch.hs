@@ -192,7 +192,7 @@ roomMessage roomStore user toRoom msg cont = atomically $ do
                       (sendMessages (buildRoomMessages room (userName user) msg)) >>
                       cont)
          else return (Error ("Not in room: " ++ (roomName room)), cont)
-    Nothing -> return (Error "Room does not exist", cont)
+    Nothing -> return (Error ("Not in room: " ++ toRoom), cont)
 
 joinRoom :: UserStore ->
             RoomStore ->
