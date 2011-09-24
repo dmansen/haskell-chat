@@ -34,7 +34,7 @@ instance Show ClientMessage where
 parseMsg :: String -> ServerMessage
 parseMsg msg = case parse messageParser "Network" msg of
   Left err -> Invalid ("Error parsing: " ++ (show err))
-  Right msg -> msg
+  Right msg -> trace ("Got message: " ++ (show msg)) $ msg
 
 
 messageParser :: Parser ServerMessage
