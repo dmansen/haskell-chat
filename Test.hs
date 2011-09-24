@@ -14,15 +14,15 @@ connect port name  = do
   response <- hGetLine handle
   return handle
 
-joinRoom :: Handle -> IO ()
-joinRoom handle = do
-  hPutStrLn handle "JOIN #test"
+joinRoom :: Handle -> String -> IO ()
+joinRoom handle room = do
+  hPutStrLn handle ("JOIN #" ++ room)
   hFlush handle
   return ()
 
-messageRoom :: Handle -> IO ()
-messageRoom handle = do
-  hPutStrLn handle "MSG #test HELLO!"
+messageRoom :: Handle -> String -> IO ()
+messageRoom handle room = do
+  hPutStrLn handle ("MSG #" ++ room ++ " HELLO!")
   hFlush handle
   return ()
 
@@ -33,15 +33,15 @@ logout handle = do
 
 connectAndLogout port name = connect port name >>= logout
 
-connect1000 :: PortNumber -> IO [Handle]
-connect1000 port = do
-  sequence $ map (\n -> connect port ("Test" ++ (show n))) [1..500]
+connect500 :: PortNumber -> String -> IO [Handle]
+connect500 port namePrefix = do
+  sequence $ map (\n -> connect port (namePrefix ++ (show n))) [1..500]
 
 logoutAll :: [Handle] -> IO ()
 logoutAll users = foldr (>>) (return ()) $ map (\h -> logout h) users
 
-allJoinRoom :: [Handle] -> IO ()
-allJoinRoom users = foldr (>>) (return ()) $ map (\h -> joinRoom h) users
+allJoinRoom :: [Handle] -> String -> IO ()
+allJoinRoom users room = foldr (>>) (return ()) $ map (\h -> joinRoom h room) users
 
-allMessageRoom :: [Handle] -> IO ()
-allMessageRoom users = foldr (>>) (return ()) $ map (\h -> messageRoom h) users
+allMessageRoom :: [Handle] -> String -> IO ()
+allMessageRoom users room = foldr (>>) (return ()) $ map (\h -> messageRoom h room) users

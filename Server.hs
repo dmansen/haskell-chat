@@ -39,8 +39,8 @@ waitForClients serverSock userStore roomStore = do
   listenThreadExceptionHandler (waitForClients serverSock userStore roomStore)
 
 listenThreadExceptionHandler :: IO () -> IOException -> IO ()
-listenThreadExceptionHandler continue _ =
-  trace "Exception in socket wait thread caught." $ continue
+listenThreadExceptionHandler continue e =
+  trace ("Exception in socket wait thread caught: " ++ show e) $ continue
 
 launchClientThread :: Handle ->
                       UserStore ->
