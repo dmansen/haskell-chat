@@ -87,6 +87,13 @@ dispatcherThreadWrapper user userStore roomStore handle =
   `finally`
   dispatcherExceptionHandler user userStore roomStore handle
 
+-- This is the main handler loop for a client. It is fairly straightforward
+-- except for one thing: each one of the functions to process a
+-- message return a message to forward to this user, and an IO
+-- thunk containing the rest of the stuff to do (forwarding
+-- messages to other users, etc). We separate them so that we
+-- can respond to the user quickly and do all of the heavy lifting
+-- of dispatching messages in a different thread.
 dispatcherThread :: User ->
                     UserStore ->
                     RoomStore ->
