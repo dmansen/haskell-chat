@@ -38,12 +38,11 @@ waitForClients :: Socket ->
                   UserStore ->
                   RoomStore ->
                   IO ()
-waitForClients serverSock userStore roomStore = do
+waitForClients serverSock userStore roomStore = forever $ do
   (handle, _, _) <- accept serverSock
   hSetBuffering handle LineBuffering
   hSetNewlineMode handle (NewlineMode CRLF CRLF)
   launchClientThread handle userStore roomStore
-  waitForClients serverSock userStore roomStore
 
 listenThreadExceptionHandler :: IO () -> IOException -> IO ()
 listenThreadExceptionHandler continue e = continue

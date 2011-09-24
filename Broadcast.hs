@@ -19,8 +19,11 @@ import Message
 -- our main handler thread doesn't need to wait for it to finish.
 -- uses safePutMsg to ensure that the messages are sent in the
 -- proper order.
-sendMessages :: [(TMVar Handle, ClientMessage)] -> IO ThreadId
-sendMessages = forkIO . foldr (>>) (return ()) . map (\(h, msg) -> safePutMsg h msg)
+sendMessages :: [(TMVar Handle, ClientMessage)] ->
+                IO ThreadId
+sendMessages = forkIO .
+               foldr (>>) (return ()) .
+               map (\(h, msg) -> safePutMsg h msg)
 
 -- each user has an MVar () which is used as a mutex to
 -- ensure no interleaving of messages.
@@ -240,7 +243,7 @@ buildRoomMessages :: Room ->
                      String ->
                      [(TMVar Handle, ClientMessage)]
 buildRoomMessages room from msg =
-  map (\u -> 
+  map (\u ->
           let cMessage = CRoomMessage from (roomName room) msg
               conn = connection u in
             (conn `seq` conn, cMessage `seq` cMessage))
