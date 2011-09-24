@@ -23,7 +23,7 @@ sendMessages = forkIO . foldr (>>) (return ()) . map safePutMsg
 safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
 safePutMsg ((handle, lock), msg) = do
   takeMVar lock
-  hPutStrLn handle (show msg)
+  unsafePutMsg handle msg
   putMVar lock ()
 
 -- puts a message on a handle without a lock. used
