@@ -28,19 +28,18 @@ waitForClients :: Socket ->
                   UserStore ->
                   RoomStore ->
                   IO ()
-waitForClients serverSock userStore roomStore =
-    (do
-      (handle, host, port) <- accept serverSock
-      hSetBuffering handle LineBuffering
-      hSetNewlineMode handle (NewlineMode CRLF CRLF)
-      spawnClientThreads handle userStore roomStore
-      waitForClients serverSock userStore roomStore)
-    `E.catch`
-    ((\_ -> trace "Exception in socket wait thread caught." $
-            waitForClients
-            serverSock
-            userStore
-            roomStore) :: IOException -> IO ())
+waitForClients serverSock userStore roomStore = do
+  (handle, host, port) <- accept serverSock
+  hSetBuffering handle LineBuffering
+  hSetNewlineMode handle (NewlineMode CRLF CRLF)
+  spawnClientThreads handle userStore roomStore
+  waitForClients serverSock userStore roomStore
+  `E.catch`
+  listenThreadExceptionHandler (waitForClients serverSock userStore roomStore)
+
+listenThreadExceptionHandler :: IO () -> IOException -> IO ()
+listenThreadExceptionHandler continue _ =
+  trace "Exception in socket wait thread caught." $ continue
 
 spawnClientThreads :: Handle ->
                       UserStore ->
