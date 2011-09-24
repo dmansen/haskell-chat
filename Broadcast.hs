@@ -46,38 +46,40 @@ loginThread users rooms incoming outgoing = do
     (handle, msg) <- atomically $ readTChan incoming
     (responseMsg, cont) <- do
       case msg of
-        Login name ->
-          return (Ok, dispatcherThread users rooms incoming outgoing)
+        Login name -> do
+          login users name handle (return ())
+          return (Ok, dispatcherThread name users rooms incoming outgoing)
         otherwise ->
           return (Error "Not logged in", repeat)
     atomically $ writeTChan outgoing (handle, responseMsg)
     cont
 
-dispatcherThread :: UserStore ->
+dispatcherThread :: String ->
+                    UserStore ->
                     RoomStore ->
                     TChan (Handle, ServerMessage) ->
                     TChan (Handle, ClientMessage) ->
                     IO ()
-dispatcherThread users rooms incoming outgoing = do
-  let repeat = dispatcherThread users rooms incoming outgoing in do
+dispatcherThread name users rooms incoming outgoing = do
+  let repeat = dispatcherThread name users rooms incoming outgoing in do
     (handle, msg) <- atomically $ readTChan incoming
     print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
       case msg of
-        Login name ->
+        Login _ ->
           return (Error "Already logged in", repeat)
-        SPrivateMessage from to msg ->
-          privateMessage users from to msg repeat outgoing
-        SRoomMessage from room msg ->
-          roomMessage rooms from room msg repeat outgoing
-        Join name room ->
+        SPrivateMessage to msg ->
+          privateMessage users name to msg repeat outgoing
+        SRoomMessage room msg ->
+          roomMessage rooms name room msg repeat outgoing
+        Join room ->
           joinRoom users rooms name room repeat
-        Part name room ->
+        Part room ->
           partRoom users rooms name room repeat
-        Logout name ->
+        Logout ->
           logout users rooms name handle
-        Invalid ->
-          return (Error "Invalid Command", repeat)
+        Invalid err ->
+          return (Error ("Invalid Command: " ++ err), repeat)
     atomically $ writeTChan outgoing (handle, responseMsg)
     cont
 

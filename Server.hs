@@ -29,6 +29,8 @@ waitForClients :: Socket ->
 waitForClients serverSock userStore roomStore =
     (do
       (handle, host, port) <- accept serverSock
+      hSetBuffering handle LineBuffering
+      hSetNewlineMode handle (NewlineMode CRLF CRLF)
       spawnClientThreads handle userStore roomStore
       waitForClients serverSock userStore roomStore)
     `E.catch`
@@ -62,9 +64,7 @@ clientListener :: Handle ->
                   TChan (Handle, ServerMessage) ->
                   IO ()
 clientListener handle incoming = do
-  hSetBuffering handle LineBuffering
   line <- hGetLine handle
-  case parseMsg line of
-    Just msg -> do
-                atomically $ writeTChan incoming (handle, msg)
-    Nothing -> return ()
+  let msg = parseMsg line in do
+    putStrLn ("Got msg " ++ line)
+    atomically $ writeTChan incoming (handle, msg)
