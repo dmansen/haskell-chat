@@ -1,6 +1,7 @@
 module Broadcast where
 
 import Control.Concurrent.STM
+import Control.Concurrent
 import Data.Map as M
 import Debug.Trace
 import System.IO
@@ -13,13 +14,13 @@ import Message
 data Room = Room {
   roomName :: String,
   users :: [User]
-} deriving (Show, Eq)
+} deriving (Eq)
 
 data User = User {
   userName :: String,
-  handle :: Handle,
+  connection :: (Handle, MVar ()),
   rooms :: [Room]
-} deriving (Show, Eq)
+} deriving (Eq)
 
 class StringKey a where
   stringKey :: a -> String
@@ -30,102 +31,123 @@ instance StringKey User where
 instance StringKey Room where
   stringKey = roomName
 
-makeUser name handle = User { userName = name, handle = handle, rooms = [] }
+makeUser name handle lock = User {
+  userName = name,
+  connection = (handle, lock),
+  rooms = [] }
 makeRoom name = Room { roomName = name, users = [] }
 
 type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
 
+sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
+sendMessages msgs = forkIO $ foldr (>>) (return ()) $ Prelude.map safePutMsg msgs
+
+safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
+safePutMsg ((handle, lock), msg) = do
+  takeMVar lock
+  trace ("Writing " ++ show msg) $ hPutStrLn handle (show msg)
+  putMVar lock ()
+
+readMessage :: Handle -> IO ServerMessage
+readMessage handle = do
+  line <- hGetLine handle
+  let msg = parseMsg line in do
+    putStrLn ("Got msg " ++ line)
+    return msg
+
+
 loginThread :: UserStore ->
                RoomStore ->
-               TChan (Handle, ServerMessage) ->
-               TChan (Handle, ClientMessage) ->
-               IO () ->
+               Handle ->
                IO ()
-loginThread users rooms incoming outgoing kill = do
-  let repeat = loginThread users rooms incoming outgoing kill in do
-    (handle, msg) <- atomically $ readTChan incoming
+loginThread users rooms handle = do
+  let repeat = loginThread users rooms handle in do
+    msg <- readMessage handle
     (responseMsg, cont) <- do
       case msg of
         Login name -> do
-          login users name handle (return ())
-          return (Ok, dispatcherThread name users rooms incoming outgoing kill)
+          user <- login users name handle (return ())
+          case user of
+            Just u ->
+              return (Ok, dispatcherThread u users rooms handle)
+            Nothing ->
+              return (Error "Username already in use", repeat)
         otherwise ->
           return (Error "Not logged in", repeat)
-    atomically $ writeTChan outgoing (handle, responseMsg)
+    hPutStrLn handle (show responseMsg)
     cont
 
-dispatcherThread :: String ->
+dispatcherThread :: User ->
                     UserStore ->
                     RoomStore ->
-                    TChan (Handle, ServerMessage) ->
-                    TChan (Handle, ClientMessage) ->
-                    IO () ->
+                    Handle ->
                     IO ()
-dispatcherThread name users rooms incoming outgoing kill = do
-  let repeat = dispatcherThread name users rooms incoming outgoing kill in do
-    (handle, msg) <- atomically $ readTChan incoming
+dispatcherThread user users rooms handle = do
+  let repeat = dispatcherThread user users rooms handle in do
+    msg <- readMessage handle
     print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
+      let name = (userName user)
       case msg of
         Login _ ->
           return (Error "Already logged in", repeat)
         SPrivateMessage to msg ->
-          privateMessage users name to msg repeat outgoing
+          privateMessage users name to msg repeat
         SRoomMessage room msg ->
-          roomMessage rooms name room msg repeat outgoing
+          roomMessage rooms name room msg repeat
         Join room ->
           joinRoom users rooms name room repeat
         Part room ->
           partRoom users rooms name room repeat
         Logout ->
-          logout users rooms name kill
+          logout users rooms name
         Invalid err ->
           return (Error ("Invalid Command: " ++ err), repeat)
-    atomically $ writeTChan outgoing (handle, responseMsg)
+    sendMessages [(connection user, responseMsg)]
     cont
 
 login :: UserStore ->
          String ->
          Handle ->
          IO () ->
-         IO (ClientMessage, IO ())
-login users name handle cont = atomically $ do
-      user <- maybeGrabFromSTM users name
-      case user of
-        Just u ->
-          return (Error "Username already in use", hClose handle)
-        Nothing -> do
-          updateSTM users (makeUser name handle)
-          return (Ok, cont)
+         IO (Maybe User)
+login users name handle cont = do
+  newLock <- newMVar ()
+  atomically $ do
+    user <- maybeGrabFromSTM users name
+    case user of
+      Just u -> return Nothing
+      Nothing -> do
+        let newUser = makeUser name handle newLock
+        updateSTM users newUser
+        return (Just newUser)
 
 logout :: UserStore ->
           RoomStore ->
           String ->
-          IO () ->
           IO (ClientMessage, IO ())
-logout userStore roomStore name kill = atomically $ do
+logout userStore roomStore name = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
   return (Ok,
           (atomically $
-            removeUserFromRooms maybeUser userStore roomStore) >> kill)
+            removeUserFromRooms maybeUser userStore roomStore) >>
+         putStrLn (name ++ " has left"))
 
 privateMessage :: UserStore ->
                   String ->
                   String ->
                   String ->
                   IO () ->
-                  TChan (Handle, ClientMessage) ->
                   IO (ClientMessage, IO ())
-privateMessage userStore fromName toName msg cont chan = do
+privateMessage userStore fromName toName msg cont = do
   maybeUser <- atomically $
                maybeGrabFromSTM userStore toName
   case maybeUser of
     Just toUser -> return (Ok,
-                           (atomically $
-                            sendPrivateMessage toUser fromName msg chan) >>
+                            (sendMessages [(buildPrivateMessage toUser fromName msg)]) >>
                            cont)
     Nothing -> return (Error "User is not logged in", cont)
 
@@ -134,14 +156,12 @@ roomMessage :: RoomStore ->
                String ->
                String ->
                IO () ->
-               TChan (Handle, ClientMessage) ->
                IO (ClientMessage, IO ())
-roomMessage roomStore fromName toRoom msg cont chan = do
+roomMessage roomStore fromName toRoom msg cont = do
   maybeRoom <- atomically $ maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
     Just room -> return (Ok,
-                         (atomically $
-                          sendRoomMessage room fromName msg chan ) >>
+                          (sendMessages (buildRoomMessages room fromName msg)) >>
                          cont)
     Nothing -> return (Error "Room does not exist", cont)
 
@@ -206,26 +226,20 @@ removeUserFromRooms maybeUser userStore roomStore =
                                 users r
                         }) userRooms) >> return ()
 
-sendPrivateMessage :: User ->
-                      String ->
-                      String ->
-                      TChan (Handle, ClientMessage) ->
-                      STM ()
-sendPrivateMessage to fromName msg chan =
-  writeTChan chan (handle to, CPrivateMessage fromName msg)
+buildPrivateMessage :: User ->
+                       String ->
+                       String ->
+                       ((Handle, MVar ()), ClientMessage)
+buildPrivateMessage to fromName msg =
+  (connection to, CPrivateMessage fromName msg)
 
-sendRoomMessage :: Room ->
-                   String ->
-                   String ->
-                   TChan (Handle, ClientMessage) ->
-                   STM ()
-sendRoomMessage room from msg chan =
-  (sequence (Prelude.map
-             (\u -> writeTChan chan
-                    (handle u, CRoomMessage from (roomName room) msg))
-             (Prelude.filter (\u -> userName u /= from) (users room))
-            )) >>
-  return ()
+buildRoomMessages :: Room ->
+                     String ->
+                     String ->
+                     [((Handle , MVar ()), ClientMessage)]
+buildRoomMessages room from msg =
+  Prelude.map (\u -> (connection u, CRoomMessage from (roomName room) msg))
+  (Prelude.filter (\u -> userName u /= from) (users room))
 
 createRoomIfNeeded :: RoomStore ->
                       String ->
