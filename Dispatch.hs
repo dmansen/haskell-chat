@@ -172,10 +172,11 @@ privateMessage :: UserStore ->
 privateMessage userStore from toName msg cont = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore toName
   case maybeUser of
-    Just toUser -> return (Ok,
-                            (sendMessages
-                             [(buildPrivateMessage toUser (userName from) msg)]) >>
-                           cont)
+    Just toUser ->
+      return (Ok,
+              (sendMessages
+               [(buildPrivateMessage toUser (userName from) msg)]) >>
+              cont)
     Nothing -> return (Error "User is not logged in", cont)
 
 roomMessage :: RoomStore ->
@@ -217,14 +218,16 @@ partRoom :: UserStore ->
             IO (ClientMessage, IO ())
 partRoom userStore roomStore user rName cont = atomically $ do
   room <- createRoomIfNeeded roomStore rName
-  let newUser = (user { rooms = filter
-                                (\r -> roomName r /= roomName room)
-                                (rooms user)
-                      })
-  let newRoom = (room { users = filter
-                                (\u -> userName u /= userName user)
-                                (users room)
-                      })
+  let newUser =
+        (user { rooms = filter
+                        (\r -> roomName r /= roomName room)
+                        (rooms user)
+              })
+      newRoom =
+        (room { users = filter
+                        (\u -> userName u /= userName user)
+                        (users room)
+              })
   updateSTM userStore newUser
   updateSTM roomStore newRoom
   return (Ok, cont)
