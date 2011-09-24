@@ -44,7 +44,7 @@ messageParser =
   <|> try parseRoomMessage
   <|> try parsePart
   <|> try parseLogout
-  <|> return (Invalid "Didn't parse")
+  <|> return (Invalid "Couldn't parse")
 
 parseLogin = do
   s <- string "LOGIN "

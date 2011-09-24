@@ -51,7 +51,7 @@ unsafeReadMessage handle = do
 loginThreadWrapper userStore roomStore handle =
   loginThread userStore roomStore handle
   `finally`
-  loginExceptionHandler handle
+  (trace "Doing final cleanup." (hClose handle))
 
 -- waits on the provided handle for the user's login message
 loginThread :: UserStore ->
@@ -76,16 +76,13 @@ loginThread users rooms handle = do
     unsafePutMsg handle responseMsg
     cont
 
--- make sure we always close out the user's handle
-loginExceptionHandler :: Handle -> IO ()
-loginExceptionHandler handle = trace "Doing final cleanup." $ hClose handle
-
 -- same comment above as loginThreadWrapper - recursion forces us to
 -- wrap this
 dispatcherThreadWrapper user userStore roomStore handle =
   dispatcherThread user userStore roomStore handle
-  `finally`
-  dispatcherExceptionHandler user userStore roomStore handle
+  `finally` do
+    atomically $ logout userStore roomStore (userName user)
+    trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
 -- This is the main handler loop for a client. It is fairly straightforward
 -- except for one thing: each one of the functions to process a
@@ -122,17 +119,6 @@ dispatcherThread user users rooms handle =
           return (Error ("Invalid Command: " ++ err), repeat)
     sendMessages [(connection user, responseMsg)]
     cont
-
--- make sure we always go through the logout procedure,
--- even in the event of an error
-dispatcherExceptionHandler :: User ->
-                              UserStore ->
-                              RoomStore ->
-                              Handle ->
-                              IO ()
-dispatcherExceptionHandler user users rooms handle = do
-  atomically $ logout users rooms (userName user)
-  trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
 tryLogin :: UserStore ->
             String ->
