@@ -1,4 +1,6 @@
-module Message where
+module Message (ServerMessage(..),
+                ClientMessage(..),
+                parseMsg) where
 
 import Debug.Trace
 
@@ -34,9 +36,6 @@ parseMsg msg = case parse messageParser "Network" msg of
   Left err -> Invalid ("Error parsing: " ++ (show err))
   Right msg -> msg
 
-buildMessage :: ParseError -> String
-buildMessage err = let messages = map messageString $ errorMessages err in
-  foldl (++) " " messages
 
 messageParser :: Parser ServerMessage
 messageParser =

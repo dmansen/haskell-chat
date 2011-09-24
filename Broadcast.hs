@@ -1,4 +1,4 @@
-module Broadcast where
+module Broadcast (loginThreadWrapper) where
 
 import Control.Concurrent.STM
 import Control.Concurrent
@@ -29,6 +29,9 @@ readMessage handle = do
   line <- hGetLine handle
   let msg = parseMsg line in return msg
   
+-- wrap the thread in a function - necessary because loginThread uses
+-- recursion to continue. if we didn't wrap this, the function would
+-- add another finally clause every time the function was called.
 loginThreadWrapper userStore roomStore handle =
   loginThread userStore roomStore handle
   `finally`
@@ -58,6 +61,8 @@ loginThread users rooms handle = do
 loginExceptionHandler :: Handle -> IO ()
 loginExceptionHandler handle = trace "Doing final cleanup." $ hClose handle
 
+-- same comment above as loginThreadWrapper - recursion forces us to
+-- wrap this
 dispatcherThreadWrapper user userStore roomStore handle =
   dispatcherThread user userStore roomStore handle
   `finally`

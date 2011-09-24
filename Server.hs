@@ -1,4 +1,4 @@
-module Server where
+module Server (server) where
 
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -16,11 +16,11 @@ import Broadcast
 import DataStores
 import Message
 
-server :: PortNumber -> IO ()
+server :: PortID -> IO ()
 server port = withSocketsDo $ do
   userStore <- atomically $ newTVar M.empty
   roomStore <- atomically $ newTVar M.empty
-  serverSock <- trace "Server listening" $ listenOn (PortNumber port)
+  serverSock <- trace "Server listening" $ listenOn port
   (waitForClients serverSock userStore roomStore
    `finally`
    sClose serverSock)
