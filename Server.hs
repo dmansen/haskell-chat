@@ -15,11 +15,11 @@ import System.IO
 import Broadcast
 import Message
 
-server :: IO ()
-server = withSocketsDo $ do
+server :: PortNumber -> IO ()
+server port = withSocketsDo $ do
   userStore <- atomically $ newTVar M.empty
   roomStore <- atomically $ newTVar M.empty
-  serverSock <- trace "Server listening" $ listenOn (PortNumber 9000)
+  serverSock <- trace "Server listening" $ listenOn (PortNumber port)
   waitForClients serverSock userStore roomStore
 
 waitForClients :: Socket ->
