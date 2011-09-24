@@ -21,7 +21,6 @@ joinRoom handle = do
 logout handle = do
   hPutStrLn handle "LOGOUT"
   hFlush handle
-  response <- hGetLine handle
   return ()
   
 connectAndLogout port name = connect port name >>= logout
