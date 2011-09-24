@@ -41,7 +41,7 @@ type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
 
 sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
-sendMessages msgs = forkIO $ foldr (>>) (return ()) $ Prelude.map safePutMsg msgs
+sendMessages = forkIO . foldr (>>) (return ()) . Prelude.map safePutMsg
 
 safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
 safePutMsg ((handle, lock), msg) = do
