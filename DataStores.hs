@@ -27,12 +27,6 @@ instance StringKey User where
 instance StringKey Room where
   stringKey = roomName
 
-makeUser name lock = User {
-  userName = name,
-  connection = lock,
-  rooms = [] }
-makeRoom name = Room { roomName = name, users = [] }
-
 type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
 
@@ -44,7 +38,10 @@ createRoomIfNeeded roomStore name = do
   case M.lookup name roomStoreMap of
     Just existing -> return existing
     Nothing -> do
-      let newRoom = makeRoom name
+      let newRoom = Room {
+            roomName = name,
+            users = []
+          }
           newMap = M.insert (roomName newRoom) newRoom roomStoreMap
       writeTVar roomStore newMap
       return newRoom

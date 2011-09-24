@@ -100,7 +100,11 @@ tryLogin userStore name handle = do
       Just u -> return Nothing
       Nothing -> do
         newLock <- newTMVar handle
-        let newUser = makeUser name newLock
+        let newUser = User {
+              userName = name,
+              connection = newLock,
+              rooms = []
+            }
         updateSTM userStore newUser
         return (Just newUser)
 
