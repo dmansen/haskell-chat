@@ -14,7 +14,7 @@ data Room = Room {
 
 data User = User {
   userName :: String,
-  connection :: (Handle, MVar ()),
+  connection :: TMVar Handle,
   rooms :: [Room]
 } deriving (Eq)
 
@@ -27,9 +27,9 @@ instance StringKey User where
 instance StringKey Room where
   stringKey = roomName
 
-makeUser name handle lock = User {
+makeUser name lock = User {
   userName = name,
-  connection = (handle, lock),
+  connection = lock,
   rooms = [] }
 makeRoom name = Room { roomName = name, users = [] }
 
@@ -80,6 +80,7 @@ maybeGrabFromSTM :: TVar (Map String a) ->
                     STM (Maybe a)
 maybeGrabFromSTM mapVar name = do
   map <- readTVar mapVar
-  case M.lookup name map of
-    Just a -> return (return a)
-    Nothing -> return Nothing
+  let maybeObj = M.lookup name map in
+    case maybeObj `seq` maybeObj of
+      Just a -> return (return a)
+      Nothing -> return Nothing

@@ -1,7 +1,7 @@
 module Broadcast (loginThreadWrapper) where
 
-import Control.Concurrent.STM
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Exception
 import Data.Map as M hiding (filter, map)
 import Debug.Trace
@@ -19,16 +19,16 @@ import Message
 -- our main handler thread doesn't need to wait for it to finish.
 -- uses safePutMsg to ensure that the messages are sent in the
 -- proper order.
-sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
-sendMessages = forkIO . foldr (>>) (return ()) . map safePutMsg
+sendMessages :: [(TMVar Handle, ClientMessage)] -> IO ThreadId
+sendMessages = forkIO . foldr (>>) (return ()) . map (\(h, msg) -> safePutMsg h msg)
 
 -- each user has an MVar () which is used as a mutex to
 -- ensure no interleaving of messages.
-safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
-safePutMsg ((handle, lock), msg) = do
-  takeMVar lock
+safePutMsg :: TMVar Handle -> ClientMessage -> IO ()
+safePutMsg lock msg = do
+  handle <- atomically $ takeTMVar lock
   unsafePutMsg handle msg
-  putMVar lock ()
+  atomically $ putTMVar lock handle
 
 -- puts a message on a handle without a lock. used
 -- in the login thread (since we haven't created an
@@ -131,13 +131,13 @@ tryLogin :: UserStore ->
 tryLogin users name handle = do
   -- create the lock first, so that we can ensure everything after
   -- happens in a single STM transaction
-  newLock <- newMVar ()
   atomically $ do
     user <- maybeGrabFromSTM users name
     case user of
       Just u -> return Nothing
       Nothing -> do
-        let newUser = makeUser name handle newLock
+        newLock <- newTMVar handle
+        let newUser = makeUser name newLock
         updateSTM users newUser
         return (Just newUser)
 
@@ -229,7 +229,7 @@ partRoom userStore roomStore uName rName cont = atomically $ do
 buildPrivateMessage :: User ->
                        String ->
                        String ->
-                       ((Handle, MVar ()), ClientMessage)
+                       (TMVar Handle, ClientMessage)
 buildPrivateMessage to fromName msg =
   let cMessage = CPrivateMessage fromName msg
       conn = connection to in
@@ -238,7 +238,7 @@ buildPrivateMessage to fromName msg =
 buildRoomMessages :: Room ->
                      String ->
                      String ->
-                     [((Handle , MVar ()), ClientMessage)]
+                     [(TMVar Handle, ClientMessage)]
 buildRoomMessages room from msg =
   map (\u -> 
           let cMessage = CRoomMessage from (roomName room) msg

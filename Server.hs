@@ -20,27 +20,33 @@ server :: PortID -> IO ()
 server port = withSocketsDo $ do
   userStore <- atomically $ newTVar M.empty
   roomStore <- atomically $ newTVar M.empty
-  serverSock <- trace "Server listening" $ listenOn port
-  (waitForClients serverSock userStore roomStore
+  serverSock <- listenOn port
+  (waitForClientsWrapper serverSock userStore roomStore
    `finally`
    sClose serverSock)
+
+waitForClientsWrapper :: Socket ->
+                         UserStore ->
+                         RoomStore ->
+                         IO ()
+waitForClientsWrapper serverSock userStore roomStore = do
+  waitForClients serverSock userStore roomStore
+  `E.catch`
+  listenThreadExceptionHandler (waitForClients serverSock userStore roomStore)
 
 waitForClients :: Socket ->
                   UserStore ->
                   RoomStore ->
                   IO ()
 waitForClients serverSock userStore roomStore = do
-  (handle, host, port) <- accept serverSock
+  (handle, _, _) <- accept serverSock
   hSetBuffering handle LineBuffering
   hSetNewlineMode handle (NewlineMode CRLF CRLF)
   launchClientThread handle userStore roomStore
   waitForClients serverSock userStore roomStore
-  `E.catch`
-  listenThreadExceptionHandler (waitForClients serverSock userStore roomStore)
 
 listenThreadExceptionHandler :: IO () -> IOException -> IO ()
-listenThreadExceptionHandler continue e =
-  trace ("Exception in socket wait thread caught: " ++ show e) $ continue
+listenThreadExceptionHandler continue e = continue
 
 launchClientThread :: Handle ->
                       UserStore ->
