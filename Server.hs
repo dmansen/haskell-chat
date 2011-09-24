@@ -13,6 +13,7 @@ import Network
 import System.IO
 
 import Broadcast
+import DataStores
 import Message
 
 server :: PortNumber -> IO ()
@@ -46,7 +47,5 @@ launchClientThread :: Handle ->
                       RoomStore ->
                       IO ThreadId
 launchClientThread handle userStore roomStore = do
-  outgoing   <- atomically $ newTChan
-  incoming   <- atomically $ newTChan
   forkIO $ trace "Socket accepted, forking dispatcher" $
-    loginThread userStore roomStore handle
+    loginThreadWrapper userStore roomStore handle

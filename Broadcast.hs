@@ -9,39 +9,11 @@ import System.IO
 
 import Prelude hiding (catch)
 
+import DataStores
 import Message
 
 -- This module is responsible for broadcasting messages
 -- to the proper users.
-
-data Room = Room {
-  roomName :: String,
-  users :: [User]
-} deriving (Eq)
-
-data User = User {
-  userName :: String,
-  connection :: (Handle, MVar ()),
-  rooms :: [Room]
-} deriving (Eq)
-
-class StringKey a where
-  stringKey :: a -> String
-
-instance StringKey User where
-  stringKey = userName
-
-instance StringKey Room where
-  stringKey = roomName
-
-makeUser name handle lock = User {
-  userName = name,
-  connection = (handle, lock),
-  rooms = [] }
-makeRoom name = Room { roomName = name, users = [] }
-
-type UserStore = TVar (Map String User)
-type RoomStore = TVar (Map String Room)
 
 sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
 sendMessages = forkIO . foldr (>>) (return ()) . map safePutMsg
@@ -56,6 +28,11 @@ readMessage :: Handle -> IO ServerMessage
 readMessage handle = do
   line <- hGetLine handle
   let msg = parseMsg line in return msg
+  
+loginThreadWrapper userStore roomStore handle =
+  loginThread userStore roomStore handle
+  `finally`
+  loginExceptionHandler handle
 
 loginThread :: UserStore ->
                RoomStore ->
@@ -70,18 +47,21 @@ loginThread users rooms handle = do
           user <- login users name handle (return ())
           case user of
             Just u ->
-              return (Ok, trace (name ++ " logged in") $ dispatcherThread u users rooms handle)
+              return (Ok, trace (name ++ " logged in") $ dispatcherThreadWrapper u users rooms handle)
             Nothing ->
               return (Error "Username already in use", repeat)
         otherwise ->
           return (Error "Not logged in", repeat)
     hPutStrLn handle (show responseMsg)
     cont
-    `finally`
-    loginExceptionHandler handle
 
 loginExceptionHandler :: Handle -> IO ()
 loginExceptionHandler handle = trace "Doing final cleanup." $ hClose handle
+
+dispatcherThreadWrapper user userStore roomStore handle =
+  dispatcherThread user userStore roomStore handle
+  `finally`
+  dispatcherExceptionHandler user userStore roomStore handle
 
 dispatcherThread :: User ->
                     UserStore ->
@@ -110,8 +90,6 @@ dispatcherThread user users rooms handle = do
           return (Error ("Invalid Command: " ++ err), repeat)
     sendMessages [(connection user, responseMsg)]
     cont
-  `finally`
-  (dispatcherExceptionHandler user users rooms handle)
 
 dispatcherExceptionHandler :: User ->
                               UserStore ->
@@ -226,21 +204,6 @@ partRoom userStore roomStore uName rName cont = do
       Nothing ->
         return (Error "Somehow, you don't seem to be logged in. This is a serious error.", cont)
 
-removeUserFromRooms :: Maybe User ->
-                       UserStore ->
-                       RoomStore ->
-                       STM ()
-removeUserFromRooms maybeUser userStore roomStore =
-  case maybeUser of
-    Just user -> do
-      let userRooms = rooms user
-      (sequence $ map (\newRoom -> updateSTM roomStore newRoom) $
-        map (\r -> r {
-                        users = filter (\u ->
-                                         userName u /= userName user) $
-                                users r
-                        }) userRooms) >> return ()
-
 buildPrivateMessage :: User ->
                        String ->
                        String ->
@@ -255,35 +218,3 @@ buildRoomMessages :: Room ->
 buildRoomMessages room from msg =
   map (\u -> (connection u, CRoomMessage from (roomName room) msg))
   (filter (\u -> userName u /= from) (users room))
-
-createRoomIfNeeded :: RoomStore ->
-                      String ->
-                      STM Room
-createRoomIfNeeded roomStore name = do
-  roomStoreMap <- readTVar roomStore
-  case M.lookup name roomStoreMap of
-    Just existing -> return existing
-    Nothing ->
-      do
-        let newRoom = makeRoom name
-        let newMap = M.insert (roomName newRoom) newRoom roomStoreMap
-        writeTVar roomStore newMap
-        return newRoom
-
-updateSTM :: (StringKey a) =>
-             TVar (Map String a) ->
-             a ->
-             STM ()
-updateSTM store a = do
-  map <- readTVar store
-  let newMap = M.insert (stringKey a) a map
-  writeTVar store newMap
-
-maybeGrabFromSTM :: TVar (Map String a) ->
-                    String ->
-                    STM (Maybe a)
-maybeGrabFromSTM mapVar name = do
-  map <- readTVar mapVar
-  case M.lookup name map of
-    Just a -> return (return a)
-    Nothing -> return Nothing
