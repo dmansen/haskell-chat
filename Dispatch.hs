@@ -47,8 +47,8 @@ unsafePutMsg :: Handle -> ClientMessage -> IO ()
 unsafePutMsg handle msg = hPutStrLn handle (show msg)
 
 -- grabs the next message from the handle and parses it
-readMessage :: Handle -> IO ServerMessage
-readMessage handle = do
+unsafeReadMessage :: Handle -> IO ServerMessage
+unsafeReadMessage handle = do
   line <- hGetLine handle
   let msg = parseMsg line in return msg
 
@@ -67,7 +67,7 @@ loginThread :: UserStore ->
                IO ()
 loginThread users rooms handle = do
   let repeat = loginThread users rooms handle in do
-    msg <- readMessage handle
+    msg <- unsafeReadMessage handle
     (responseMsg, cont) <- do
       case msg of
         Login name -> do
