@@ -43,12 +43,11 @@ createRoomIfNeeded roomStore name = do
   roomStoreMap <- readTVar roomStore
   case M.lookup name roomStoreMap of
     Just existing -> return existing
-    Nothing ->
-      do
-        let newRoom = makeRoom name
-        let newMap = M.insert (roomName newRoom) newRoom roomStoreMap
-        writeTVar roomStore newMap
-        return newRoom
+    Nothing -> do
+      let newRoom = makeRoom name
+          newMap = M.insert (roomName newRoom) newRoom roomStoreMap
+      writeTVar roomStore newMap
+      return newRoom
 
 removeUserFromRooms :: Maybe User ->
                        UserStore ->
@@ -58,6 +57,10 @@ removeUserFromRooms maybeUser userStore roomStore =
   case maybeUser of
     Just user -> do
       let userRooms = rooms user
+      -- this somewhat tricky. first creates a list of actions:
+      -- each one updates a room in STM to have the user removed. then,
+      -- use foldr to apply >> to each one to create a nice sequence
+      -- of actions.
       foldr (>>) (return ()) $ map (\newRoom -> updateSTM roomStore newRoom) $
         map (\r -> r {
                         users = filter (\u ->
