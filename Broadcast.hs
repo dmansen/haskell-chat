@@ -77,11 +77,11 @@ loginThread users rooms handle = do
           return (Error "Not logged in", repeat)
     hPutStrLn handle (show responseMsg)
     cont
-    `finally`
+    `catch`
     loginExceptionHandler handle
 
-loginExceptionHandler :: Handle -> IO ()
-loginExceptionHandler handle = trace "Login thread dying." $ do
+loginExceptionHandler :: Handle -> IOException -> IO ()
+loginExceptionHandler handle e = trace "Exception caught. Login thread dying." $ do
   hClose handle
   return ()
 
