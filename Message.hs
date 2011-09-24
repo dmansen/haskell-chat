@@ -60,15 +60,15 @@ parseJoin = do
   return (Join room)
 
 parsePrivateMessage = do
-  string "USERMSG "
-  to <- many (noneOf " ")
+  string "MSG "
+  to <- many (noneOf " #")
   char ' '
   msg <- many anyChar
   eof
   return (SPrivateMessage to msg)
 
 parseRoomMessage = do
-  string "ROOMMSG #"
+  string "MSG #"
   to <- many (noneOf " ")
   char ' '
   msg <- many anyChar
