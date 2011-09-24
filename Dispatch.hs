@@ -33,13 +33,6 @@ safePutMsg lock msg = do
   unsafePutMsg handle msg
   atomically $ putTMVar lock handle
 
-safeGetMsg :: User -> IO ServerMessage
-safeGetMsg user = do
-  handle <- atomically $ takeTMVar (connection user)
-  message <- hGetLine handle
-  atomically $ putTMVar (connection user) handle
-  return (parseMsg message)
-
 -- puts a message on a handle without a lock. used
 -- in the login thread (since we haven't created an
 -- MVar for them yet)
@@ -75,7 +68,7 @@ loginThread users rooms handle = do
           case user of
             Just u ->
               return (Ok, trace (name ++ " logged in") $
-                          dispatcherThreadWrapper u users rooms)
+                          dispatcherThreadWrapper u users rooms handle)
             Nothing ->
               return (Error "Username already in use", repeat)
         otherwise ->
@@ -89,10 +82,10 @@ loginExceptionHandler handle = trace "Doing final cleanup." $ hClose handle
 
 -- same comment above as loginThreadWrapper - recursion forces us to
 -- wrap this
-dispatcherThreadWrapper user userStore roomStore =
-  dispatcherThread user userStore roomStore
+dispatcherThreadWrapper user userStore roomStore handle =
+  dispatcherThread user userStore roomStore handle
   `finally`
-  dispatcherExceptionHandler user userStore roomStore
+  dispatcherExceptionHandler user userStore roomStore handle
 
 -- This is the main handler loop for a client. It is fairly straightforward
 -- except for one thing: each one of the functions to process a
@@ -104,10 +97,11 @@ dispatcherThreadWrapper user userStore roomStore =
 dispatcherThread :: User ->
                     UserStore ->
                     RoomStore ->
+                    Handle ->
                     IO ()
-dispatcherThread user users rooms = do
-  let repeat = dispatcherThread user users rooms in do
-    msg <- safeGetMsg user
+dispatcherThread user users rooms handle = do
+  let repeat = dispatcherThread user users rooms handle in do
+    msg <- readMessage handle
     (responseMsg, cont) <- atomically $ do
       let name = (userName user)
       case msg of
@@ -135,8 +129,9 @@ dispatcherThread user users rooms = do
 dispatcherExceptionHandler :: User ->
                               UserStore ->
                               RoomStore ->
+                              Handle ->
                               IO ()
-dispatcherExceptionHandler user users rooms = do
+dispatcherExceptionHandler user users rooms handle = do
   atomically $ logout users rooms (userName user)
   trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
