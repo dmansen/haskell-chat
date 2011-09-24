@@ -56,8 +56,8 @@ removeUserFromRooms maybeUser userStore roomStore =
       let userRooms = rooms user
       -- this somewhat tricky. first creates a list of actions:
       -- each one updates a room in STM to have the user removed. then,
-      -- use foldr to apply >> to each one to create a nice sequence
-      -- of actions.
+      -- use foldr to apply >> to each one to create a single again
+      -- which runs all of them in sequence.
       foldr (>>) (return ()) $ map (\newRoom -> updateSTM roomStore newRoom) $
         map (\r -> r {
                 users = filter (\u ->
