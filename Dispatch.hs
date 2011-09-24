@@ -108,13 +108,13 @@ dispatcherThread user users rooms handle = do
         Login _ ->
           return (Error "Already logged in", repeat)
         SPrivateMessage to msg ->
-          privateMessage users name to msg repeat
+          privateMessage users user to msg repeat
         SRoomMessage room msg ->
-          roomMessage rooms name room msg repeat
+          roomMessage rooms user room msg repeat
         Join room ->
-          joinRoom users rooms name room repeat
+          joinRoom users rooms user room repeat
         Part room ->
-          partRoom users rooms name room repeat
+          partRoom users rooms user room repeat
         Logout ->
           -- we don't need to call logout explicity
           -- (see the finally block above, and exception handler below)
@@ -164,77 +164,70 @@ logout userStore roomStore name = atomically $ do
               (atomically $ removeUserFromRooms maybeUser userStore roomStore))
 
 privateMessage :: UserStore ->
-                  String ->
+                  User ->
                   String ->
                   String ->
                   IO () ->
                   IO (ClientMessage, IO ())
-privateMessage userStore fromName toName msg cont = atomically $ do
+privateMessage userStore from toName msg cont = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore toName
   case maybeUser of
     Just toUser -> return (Ok,
                             (sendMessages
-                             [(buildPrivateMessage toUser fromName msg)]) >>
+                             [(buildPrivateMessage toUser (userName from) msg)]) >>
                            cont)
     Nothing -> return (Error "User is not logged in", cont)
 
 roomMessage :: RoomStore ->
-               String ->
+               User ->
                String ->
                String ->
                IO () ->
                IO (ClientMessage, IO ())
-roomMessage roomStore fromName toRoom msg cont = atomically $ do
+roomMessage roomStore user toRoom msg cont = atomically $ do
   maybeRoom <- maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
-    Just room -> return (Ok,
-                          (sendMessages (buildRoomMessages room fromName msg)) >>
-                         cont)
+    Just room ->
+      if user `elem` (users room)
+         then return (Ok,
+                      (sendMessages (buildRoomMessages room (userName user) msg)) >>
+                      cont)
+         else return (Error ("Not in room: " ++ (roomName room)), cont)
     Nothing -> return (Error "Room does not exist", cont)
 
 joinRoom :: UserStore ->
             RoomStore ->
-            String ->
+            User ->
             String ->
             IO () ->
             IO (ClientMessage, IO ())
-joinRoom userStore roomStore userName roomName cont = atomically $ do
-  maybeUser <- maybeGrabFromSTM userStore userName
-  case maybeUser of
-    Just user -> do
-      room <- createRoomIfNeeded roomStore roomName
-      let newUser = (user { rooms = room : (rooms user) } )
-      let newRoom = (room { users = user : (users room) } )
-      updateSTM userStore newUser
-      updateSTM roomStore newRoom
-      return (Ok, cont)
-    Nothing -> -- this is a bizarre situation
-      return (Error "Somehow, you don't seem to be logged in. This is a serious error.", cont)
+joinRoom userStore roomStore user roomName cont = atomically $ do
+  room <- createRoomIfNeeded roomStore roomName
+  let newUser = (user { rooms = room : (rooms user) } )
+  let newRoom = (room { users = user : (users room) } )
+  updateSTM userStore newUser
+  updateSTM roomStore newRoom
+  return (Ok, cont)
 
 partRoom :: UserStore ->
             RoomStore ->
-            String ->
+            User ->
             String ->
             IO () ->
             IO (ClientMessage, IO ())
-partRoom userStore roomStore uName rName cont = atomically $ do
-  maybeUser <- maybeGrabFromSTM userStore uName
-  case maybeUser of
-    Just user -> do
-      room <- createRoomIfNeeded roomStore rName
-      let newUser = (user { rooms = filter
-                                    (\r -> roomName r /= roomName room)
-                                    (rooms user)
-                          })
-      let newRoom = (room { users = filter
-                                    (\u -> userName u /= userName user)
-                                    (users room)
-                          })
-      updateSTM userStore newUser
-      updateSTM roomStore newRoom
-      return (Ok, cont)
-    Nothing ->
-      return (Error "Somehow, you don't seem to be logged in. This is a serious error.", cont)
+partRoom userStore roomStore user rName cont = atomically $ do
+  room <- createRoomIfNeeded roomStore rName
+  let newUser = (user { rooms = filter
+                                (\r -> roomName r /= roomName room)
+                                (rooms user)
+                      })
+  let newRoom = (room { users = filter
+                                (\u -> userName u /= userName user)
+                                (users room)
+                      })
+  updateSTM userStore newUser
+  updateSTM roomStore newRoom
+  return (Ok, cont)
 
 buildPrivateMessage :: User ->
                        String ->
