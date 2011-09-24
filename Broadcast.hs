@@ -231,12 +231,17 @@ buildPrivateMessage :: User ->
                        String ->
                        ((Handle, MVar ()), ClientMessage)
 buildPrivateMessage to fromName msg =
-  (connection to, CPrivateMessage fromName msg)
+  let cMessage = CPrivateMessage fromName msg
+      conn = connection to in
+    (conn `seq` conn, cMessage `seq` cMessage)
 
 buildRoomMessages :: Room ->
                      String ->
                      String ->
                      [((Handle , MVar ()), ClientMessage)]
 buildRoomMessages room from msg =
-  map (\u -> (connection u, CRoomMessage from (roomName room) msg))
+  map (\u -> 
+          let cMessage = CRoomMessage from (roomName room) msg
+              conn = connection u in
+            (conn `seq` conn, cMessage `seq` cMessage))
   (filter (\u -> userName u /= from) (users room))
