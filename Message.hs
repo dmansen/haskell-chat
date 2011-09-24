@@ -50,11 +50,13 @@ messageParser =
 parseLogin = do
   s <- string "LOGIN "
   name <- many (noneOf " ")
+  eof
   return (Login name)
 
 parseJoin = do
   string "JOIN #"
   room <- many (noneOf " ")
+  eof
   return (Join room)
 
 parsePrivateMessage = do
@@ -62,6 +64,7 @@ parsePrivateMessage = do
   to <- many (noneOf " ")
   char ' '
   msg <- many anyChar
+  eof
   return (SPrivateMessage to msg)
 
 parseRoomMessage = do
@@ -69,13 +72,16 @@ parseRoomMessage = do
   to <- many (noneOf " ")
   char ' '
   msg <- many anyChar
+  eof
   return (SRoomMessage to msg)
 
 parsePart = do
   string "PART #"
   room <- many (noneOf " ")
+  eof
   return (Part room)
 
 parseLogout = do
   string "LOGOUT"
+  eof
   return Logout
