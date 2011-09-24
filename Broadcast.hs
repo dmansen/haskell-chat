@@ -169,7 +169,7 @@ joinRoom :: UserStore ->
             String ->
             IO () ->
             IO (ClientMessage, IO ())
-joinRoom userStore roomStore userName roomName cont = atomicaaly $ do
+joinRoom userStore roomStore userName roomName cont = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore userName
   case maybeUser of
     Just user -> do
