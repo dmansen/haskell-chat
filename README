@@ -3,6 +3,6 @@ hachat (haskell chat server)
 
 hachat is a robust, highly concurrent implementation of a chat server with a simple protocol (see http://www.itasoftware.com/careers/work-at-ita/hiring-puzzles.html for details), implemented in Haskell. it uses a combination of software transactional memory and lightweight threads to achieve high performance.
 
-probably the best way to run it is to load Server.hs into ghci, and run the "server" function with a single int parameter for the port.
+the easiest way to run it is to compile Main.hs (ghc Main.hs), run the binary, and pass in an optional port. ./Main -p 9000
 
 the software is prone to constant change, as it's only been development for 2 of my evenings at this point.
