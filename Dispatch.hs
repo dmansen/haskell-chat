@@ -99,7 +99,7 @@ dispatcherThread :: User ->
                     RoomStore ->
                     Handle ->
                     IO ()
-dispatcherThread user users rooms handle = do
+dispatcherThread user users rooms handle =
   let repeat = dispatcherThread user users rooms handle in do
     msg <- unsafeReadMessage handle
     (responseMsg, cont) <- atomically $ do
