@@ -67,7 +67,8 @@ loginThread users rooms handle = do
           user <- tryLogin users name handle
           case user of
             Just u ->
-              return (Ok, trace (name ++ " logged in") $ dispatcherThreadWrapper u users rooms handle)
+              return (Ok, trace (name ++ " logged in") $
+                          dispatcherThreadWrapper u users rooms handle)
             Nothing ->
               return (Error "Username already in use", repeat)
         otherwise ->
@@ -152,10 +153,8 @@ logout userStore roomStore name = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
-  return (Ok,
-          (atomically $
-            removeUserFromRooms maybeUser userStore roomStore) >> (
-         trace (name ++ " has left") $ return ()))
+  return (Ok, trace (name ++ " has left")
+              (atomically $ removeUserFromRooms maybeUser userStore roomStore))
 
 privateMessage :: UserStore ->
                   String ->
@@ -167,7 +166,8 @@ privateMessage userStore fromName toName msg cont = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore toName
   case maybeUser of
     Just toUser -> return (Ok,
-                            (sendMessages [(buildPrivateMessage toUser fromName msg)]) >>
+                            (sendMessages
+                             [(buildPrivateMessage toUser fromName msg)]) >>
                            cont)
     Nothing -> return (Error "User is not logged in", cont)
 
