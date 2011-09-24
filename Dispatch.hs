@@ -140,8 +140,6 @@ tryLogin :: UserStore ->
             Handle ->
             IO (Maybe User)
 tryLogin users name handle = do
-  -- create the lock first, so that we can ensure everything after
-  -- happens in a single STM transaction
   atomically $ do
     user <- maybeGrabFromSTM users name
     case user of
