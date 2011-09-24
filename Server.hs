@@ -19,7 +19,7 @@ server :: IO ()
 server = withSocketsDo $ do
   userStore <- atomically $ newTVar M.empty
   roomStore <- atomically $ newTVar M.empty
-  serverSock <- trace "Listening" $ listenOn (PortNumber 9000)
+  serverSock <- trace "Server listening" $ listenOn (PortNumber 9000)
   waitForClients serverSock userStore roomStore
 
 waitForClients :: Socket ->
@@ -34,7 +34,8 @@ waitForClients serverSock userStore roomStore =
       spawnClientThreads handle userStore roomStore
       waitForClients serverSock userStore roomStore)
     `E.catch`
-    ((\_ -> waitForClients
+    ((\_ -> trace "Exception in socket wait thread caught." $
+            waitForClients
             serverSock
             userStore
             roomStore) :: IOException -> IO ())
@@ -46,5 +47,5 @@ spawnClientThreads :: Handle ->
 spawnClientThreads handle userStore roomStore = do
   outgoing   <- atomically $ newTChan
   incoming   <- atomically $ newTChan
-  forkIO $ trace "forking dispatcher" $
+  forkIO $ trace "Socket accepted, forking dispatcher" $
     loginThread userStore roomStore handle

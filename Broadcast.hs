@@ -2,9 +2,12 @@ module Broadcast where
 
 import Control.Concurrent.STM
 import Control.Concurrent
-import Data.Map as M
+import Control.Exception
+import Data.Map as M hiding (filter, map)
 import Debug.Trace
 import System.IO
+
+import Prelude hiding (catch)
 
 import Message
 
@@ -41,21 +44,18 @@ type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
 
 sendMessages :: [((Handle, MVar ()), ClientMessage)] -> IO ThreadId
-sendMessages = forkIO . foldr (>>) (return ()) . Prelude.map safePutMsg
+sendMessages = forkIO . foldr (>>) (return ()) . map safePutMsg
 
 safePutMsg :: ((Handle, MVar ()), ClientMessage) -> IO ()
 safePutMsg ((handle, lock), msg) = do
   takeMVar lock
-  trace ("Writing " ++ show msg) $ hPutStrLn handle (show msg)
+  hPutStrLn handle (show msg)
   putMVar lock ()
 
 readMessage :: Handle -> IO ServerMessage
 readMessage handle = do
   line <- hGetLine handle
-  let msg = parseMsg line in do
-    putStrLn ("Got msg " ++ line)
-    return msg
-
+  let msg = parseMsg line in return msg
 
 loginThread :: UserStore ->
                RoomStore ->
@@ -70,13 +70,20 @@ loginThread users rooms handle = do
           user <- login users name handle (return ())
           case user of
             Just u ->
-              return (Ok, dispatcherThread u users rooms handle)
+              return (Ok, trace (name ++ " logged in") $ dispatcherThread u users rooms handle)
             Nothing ->
               return (Error "Username already in use", repeat)
         otherwise ->
           return (Error "Not logged in", repeat)
     hPutStrLn handle (show responseMsg)
     cont
+    `finally`
+    loginExceptionHandler handle
+
+loginExceptionHandler :: Handle -> IO ()
+loginExceptionHandler handle = trace "Login thread dying." $ do
+  hClose handle
+  return ()
 
 dispatcherThread :: User ->
                     UserStore ->
@@ -86,7 +93,6 @@ dispatcherThread :: User ->
 dispatcherThread user users rooms handle = do
   let repeat = dispatcherThread user users rooms handle in do
     msg <- readMessage handle
-    print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
       let name = (userName user)
       case msg of
@@ -106,6 +112,18 @@ dispatcherThread user users rooms handle = do
           return (Error ("Invalid Command: " ++ err), repeat)
     sendMessages [(connection user, responseMsg)]
     cont
+  `finally`
+  (dispatcherExceptionHandler user users rooms handle)
+
+dispatcherExceptionHandler :: User ->
+                              UserStore ->
+                              RoomStore ->
+                              Handle ->
+                              IO ()
+dispatcherExceptionHandler user users rooms handle = do
+  logout users rooms (userName user)
+  hClose handle
+  trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
 login :: UserStore ->
          String ->
@@ -133,8 +151,8 @@ logout userStore roomStore name = atomically $ do
   writeTVar userStore (M.delete name userMap)
   return (Ok,
           (atomically $
-            removeUserFromRooms maybeUser userStore roomStore) >>
-         putStrLn (name ++ " has left"))
+            removeUserFromRooms maybeUser userStore roomStore) >> (
+         trace (name ++ " has left") $ return ()))
 
 privateMessage :: UserStore ->
                   String ->
@@ -197,11 +215,11 @@ partRoom userStore roomStore uName rName cont = do
     case maybeUser of
       Just user -> do
         room <- createRoomIfNeeded roomStore rName
-        let newUser = (user { rooms = Prelude.filter
+        let newUser = (user { rooms = filter
                                         (\r -> roomName r /= roomName room)
                                         (rooms user)
                             })
-        let newRoom = (room { users = Prelude.filter
+        let newRoom = (room { users = filter
                                         (\u -> userName u /= userName user)
                                         (users room)
                             })
@@ -219,9 +237,9 @@ removeUserFromRooms maybeUser userStore roomStore =
   case maybeUser of
     Just user -> do
       let userRooms = rooms user
-      (sequence $ Prelude.map (\newRoom -> updateSTM roomStore newRoom) $
-        Prelude.map (\r -> r {
-                        users = Prelude.filter (\u ->
+      (sequence $ map (\newRoom -> updateSTM roomStore newRoom) $
+        map (\r -> r {
+                        users = filter (\u ->
                                          userName u /= userName user) $
                                 users r
                         }) userRooms) >> return ()
@@ -238,8 +256,8 @@ buildRoomMessages :: Room ->
                      String ->
                      [((Handle , MVar ()), ClientMessage)]
 buildRoomMessages room from msg =
-  Prelude.map (\u -> (connection u, CRoomMessage from (roomName room) msg))
-  (Prelude.filter (\u -> userName u /= from) (users room))
+  map (\u -> (connection u, CRoomMessage from (roomName room) msg))
+  (filter (\u -> userName u /= from) (users room))
 
 createRoomIfNeeded :: RoomStore ->
                       String ->
