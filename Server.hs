@@ -38,6 +38,15 @@ waitForClients serverSock userStore roomStore =
             serverSock
             userStore
             roomStore) :: IOException -> IO ())
+    
+cleanup :: Handle ->
+           ThreadId ->
+           ThreadId ->
+           IO ()
+cleanup handle listener messenger = do
+  trace "Closing handle" $ hClose handle
+  trace "Killing listener" $ killThread listener
+  trace "Killing messenger" $ killThread messenger
 
 spawnClientThreads :: Handle ->
                       UserStore ->
@@ -50,8 +59,9 @@ spawnClientThreads handle userStore roomStore = do
                   forever $ clientListener handle incoming
   messenger  <- forkIO $ trace "forking message thread" $
                   forever $ clientMessageThread outgoing
+  let clean = cleanup handle listener messenger
   dispatcher <- forkIO $ trace "forking dispatcher" $
-                  loginThread userStore roomStore incoming outgoing
+                  loginThread userStore roomStore incoming outgoing clean
   return (listener, messenger, dispatcher)
 
 clientMessageThread :: TChan (Handle, ClientMessage) ->
@@ -59,6 +69,8 @@ clientMessageThread :: TChan (Handle, ClientMessage) ->
 clientMessageThread chan = do
   (to, msg) <- atomically $ readTChan chan
   hPutStrLn to (show msg)
+  `E.catch`
+  ((\_ -> putStrLn "Listener thread killed") :: AsyncException -> IO ())  
 
 clientListener :: Handle ->
                   TChan (Handle, ServerMessage) ->
@@ -68,3 +80,5 @@ clientListener handle incoming = do
   let msg = parseMsg line in do
     putStrLn ("Got msg " ++ line)
     atomically $ writeTChan incoming (handle, msg)
+  `E.catch`
+  ((\_ -> putStrLn "Listener thread killed") :: AsyncException -> IO ())

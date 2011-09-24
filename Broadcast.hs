@@ -40,15 +40,16 @@ loginThread :: UserStore ->
                RoomStore ->
                TChan (Handle, ServerMessage) ->
                TChan (Handle, ClientMessage) ->
+               IO () ->
                IO ()
-loginThread users rooms incoming outgoing = do
-  let repeat = loginThread users rooms incoming outgoing in do
+loginThread users rooms incoming outgoing kill = do
+  let repeat = loginThread users rooms incoming outgoing kill in do
     (handle, msg) <- atomically $ readTChan incoming
     (responseMsg, cont) <- do
       case msg of
         Login name -> do
           login users name handle (return ())
-          return (Ok, dispatcherThread name users rooms incoming outgoing)
+          return (Ok, dispatcherThread name users rooms incoming outgoing kill)
         otherwise ->
           return (Error "Not logged in", repeat)
     atomically $ writeTChan outgoing (handle, responseMsg)
@@ -59,9 +60,10 @@ dispatcherThread :: String ->
                     RoomStore ->
                     TChan (Handle, ServerMessage) ->
                     TChan (Handle, ClientMessage) ->
+                    IO () ->
                     IO ()
-dispatcherThread name users rooms incoming outgoing = do
-  let repeat = dispatcherThread name users rooms incoming outgoing in do
+dispatcherThread name users rooms incoming outgoing kill = do
+  let repeat = dispatcherThread name users rooms incoming outgoing kill in do
     (handle, msg) <- atomically $ readTChan incoming
     print ("Got message: " ++ show msg)
     (responseMsg, cont) <- do
@@ -77,7 +79,7 @@ dispatcherThread name users rooms incoming outgoing = do
         Part room ->
           partRoom users rooms name room repeat
         Logout ->
-          logout users rooms name handle
+          logout users rooms name kill
         Invalid err ->
           return (Error ("Invalid Command: " ++ err), repeat)
     atomically $ writeTChan outgoing (handle, responseMsg)
@@ -100,16 +102,15 @@ login users name handle cont = atomically $ do
 logout :: UserStore ->
           RoomStore ->
           String ->
-          Handle ->
+          IO () ->
           IO (ClientMessage, IO ())
-logout userStore roomStore name handle = atomically $ do
+logout userStore roomStore name kill = atomically $ do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
   return (Ok,
           (atomically $
-            removeUserFromRooms maybeUser userStore roomStore) >>
-            hClose handle)
+            removeUserFromRooms maybeUser userStore roomStore) >> kill)
 
 privateMessage :: UserStore ->
                   String ->
