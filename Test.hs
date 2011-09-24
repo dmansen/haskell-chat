@@ -20,9 +20,9 @@ joinRoom handle room = do
   hFlush handle
   return ()
 
-messageRoom :: Handle -> String -> IO ()
-messageRoom handle room = do
-  hPutStrLn handle ("MSG #" ++ room ++ " HELLO!")
+messageRoom :: Handle -> String -> String -> IO ()
+messageRoom handle room msg = do
+  hPutStrLn handle ("MSG #" ++ room ++ " " ++ msg)
   hFlush handle
   return ()
 
@@ -43,5 +43,5 @@ logoutAll users = foldr (>>) (return ()) $ map (\h -> logout h) users
 allJoinRoom :: [Handle] -> String -> IO ()
 allJoinRoom users room = foldr (>>) (return ()) $ map (\h -> joinRoom h room) users
 
-allMessageRoom :: [Handle] -> String -> IO ()
-allMessageRoom users room = foldr (>>) (return ()) $ map (\h -> messageRoom h room) users
+allMessageRoom :: [Handle] -> String -> String -> IO ()
+allMessageRoom users room msg = foldr (>>) (return ()) $ map (\h -> messageRoom h room msg) users
