@@ -1,4 +1,4 @@
-module Broadcast (loginThreadWrapper) where
+module Dispatch (loginThreadWrapper) where
 
 import Control.Concurrent
 import Control.Concurrent.STM

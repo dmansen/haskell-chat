@@ -12,7 +12,7 @@ import Data.Map as M
 import Network
 import System.IO
 
-import Broadcast
+import Dispatch
 import DataStores
 import Message
 
