@@ -58,17 +58,17 @@ loginThread :: UserStore ->
                RoomStore ->
                Handle ->
                IO ()
-loginThread users rooms handle = do
-  let repeat = loginThread users rooms handle in do
+loginThread userStore roomStore handle = do
+  let repeat = loginThread userStore roomStore handle in do
     msg <- unsafeReadMessage handle
     (responseMsg, cont) <- do
       case msg of
         Login name -> do
-          user <- atomically $ tryLogin users name handle
+          user <- atomically $ tryLogin userStore name handle
           case user of
             Just u ->
               return (Ok, trace (name ++ " logged in") $
-                          dispatcherThreadWrapper u users rooms handle)
+                          dispatcherThreadWrapper u userStore roomStore handle)
             Nothing ->
               return (Error "Username already in use", repeat)
         otherwise ->
@@ -96,21 +96,21 @@ dispatcherThread :: User ->
                     RoomStore ->
                     Handle ->
                     IO ()
-dispatcherThread user users rooms handle =
-  let repeat = dispatcherThread user users rooms handle in do
+dispatcherThread user userStore roomStore handle =
+  let repeat = dispatcherThread user userStore roomStore handle in do
     msg <- unsafeReadMessage handle
     (responseMsg, cont) <- atomically $ do
       case msg of
         Login _ ->
           return (Error "Already logged in", repeat)
         SPrivateMessage to msg ->
-          privateMessage users user to msg repeat
+          privateMessage userStore user to msg repeat
         SRoomMessage room msg ->
-          roomMessage rooms user room msg repeat
+          roomMessage roomStore user room msg repeat
         Join room ->
-          joinRoom users rooms user room repeat
+          joinRoom userStore roomStore user room repeat
         Part room ->
-          partRoom users rooms user room repeat
+          partRoom userStore roomStore user room repeat
         Logout ->
           -- we don't need to call logout explicity
           -- (see the finally block above, and exception handler below)
@@ -124,14 +124,14 @@ tryLogin :: UserStore ->
             String ->
             Handle ->
             STM (Maybe User)
-tryLogin users name handle = do
-    user <- maybeGrabFromSTM users name
+tryLogin userStore name handle = do
+    user <- maybeGrabFromSTM userStore name
     case user of
       Just u -> return Nothing
       Nothing -> do
         newLock <- newTMVar handle
         let newUser = makeUser name newLock
-        updateSTM users newUser
+        updateSTM userStore newUser
         return (Just newUser)
 
 logout :: UserStore ->
