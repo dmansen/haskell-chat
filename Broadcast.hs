@@ -44,7 +44,7 @@ loginThread users rooms handle = do
     (responseMsg, cont) <- do
       case msg of
         Login name -> do
-          user <- login users name handle (return ())
+          user <- tryLogin users name handle (return ())
           case user of
             Just u ->
               return (Ok, trace (name ++ " logged in") $ dispatcherThreadWrapper u users rooms handle)
@@ -100,12 +100,12 @@ dispatcherExceptionHandler user users rooms handle = do
   logout users rooms (userName user)
   trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
-login :: UserStore ->
-         String ->
-         Handle ->
-         IO () ->
-         IO (Maybe User)
-login users name handle cont = do
+tryLogin :: UserStore ->
+            String ->
+            Handle ->
+            IO () ->
+            IO (Maybe User)
+tryLogin users name handle cont = do
   newLock <- newMVar ()
   atomically $ do
     user <- maybeGrabFromSTM users name
