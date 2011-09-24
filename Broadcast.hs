@@ -81,9 +81,7 @@ loginThread users rooms handle = do
     loginExceptionHandler handle
 
 loginExceptionHandler :: Handle -> IO ()
-loginExceptionHandler handle = trace "Doing final cleanup." $ do
-  hClose handle
-  return ()
+loginExceptionHandler handle = trace "Doing final cleanup." $ hClose handle
 
 dispatcherThread :: User ->
                     UserStore ->
