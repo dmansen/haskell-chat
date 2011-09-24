@@ -207,7 +207,7 @@ joinRoom :: UserStore ->
 joinRoom userStore roomStore user roomName cont = do
   room <- createRoomIfNeeded roomStore roomName
   let newUser = (user { rooms = room : (rooms user) } )
-  let newRoom = (room { users = user : (users room) } )
+      newRoom = (room { users = user : (users room) } )
   updateSTM userStore newUser
   updateSTM roomStore newRoom
   return (Ok, cont)
