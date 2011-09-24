@@ -42,15 +42,8 @@ waitForClients serverSock userStore roomStore = forever $ do
   (handle, _, _) <- accept serverSock
   hSetBuffering handle LineBuffering
   hSetNewlineMode handle (NewlineMode CRLF CRLF)
-  launchClientThread handle userStore roomStore
+  forkIO $ trace "Socket accepted, forking dispatcher" $
+    loginThreadWrapper userStore roomStore handle
 
 listenThreadExceptionHandler :: IO () -> IOException -> IO ()
 listenThreadExceptionHandler continue e = continue
-
-launchClientThread :: Handle ->
-                      UserStore ->
-                      RoomStore ->
-                      IO ThreadId
-launchClientThread handle userStore roomStore = do
-  forkIO $ trace "Socket accepted, forking dispatcher" $
-    loginThreadWrapper userStore roomStore handle
