@@ -37,10 +37,10 @@ type UserStore = TVar (Map String User)
 type RoomStore = TVar (Map String Room)
 
 loginThread :: UserStore ->
-                    RoomStore ->
-                    TChan (Handle, ServerMessage) ->
-                    TChan (Handle, ClientMessage) ->
-                    IO ()
+               RoomStore ->
+               TChan (Handle, ServerMessage) ->
+               TChan (Handle, ClientMessage) ->
+               IO ()
 loginThread users rooms incoming outgoing = do
   let repeat = loginThread users rooms incoming outgoing in do
     (handle, msg) <- atomically $ readTChan incoming
