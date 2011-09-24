@@ -15,36 +15,6 @@ import Message
 -- This module is responsible for broadcasting messages
 -- to the proper users.
 
--- send a list of messages. this spawns another thread so that
--- our main handler thread doesn't need to wait for it to finish.
--- uses safePutMsg to ensure that the messages are sent in the
--- proper order.
-sendMessages :: [(TMVar Handle, ClientMessage)] ->
-                IO ThreadId
-sendMessages = forkIO .
-               foldr (>>) (return ()) .
-               map (\(h, msg) -> safePutMsg h msg)
-
--- each user has an MVar () which is used as a mutex to
--- ensure no interleaving of messages.
-safePutMsg :: TMVar Handle -> ClientMessage -> IO ()
-safePutMsg lock msg = do
-  handle <- atomically $ takeTMVar lock
-  unsafePutMsg handle msg
-  atomically $ putTMVar lock handle
-
--- puts a message on a handle without a lock. used
--- in the login thread (since we haven't created an
--- MVar for them yet)
-unsafePutMsg :: Handle -> ClientMessage -> IO ()
-unsafePutMsg handle msg = hPutStrLn handle (show msg)
-
--- grabs the next message from the handle and parses it
-unsafeReadMessage :: Handle -> IO ServerMessage
-unsafeReadMessage handle = do
-  line <- hGetLine handle
-  let msg = parseMsg line in return msg
-
 -- wrap the thread in a function - necessary because loginThread uses
 -- recursion to continue. if we didn't wrap this, the function would
 -- add another finally clause every time the function was called.
@@ -213,6 +183,36 @@ partRoom userStore roomStore user rName cont = do
   updateSTM userStore newUser
   updateSTM roomStore newRoom
   return (Ok, cont)
+
+-- send a list of messages. this spawns another thread so that
+-- our main handler thread doesn't need to wait for it to finish.
+-- uses safePutMsg to ensure that the messages are sent in the
+-- proper order.
+sendMessages :: [(TMVar Handle, ClientMessage)] ->
+                IO ThreadId
+sendMessages = forkIO .
+               foldr (>>) (return ()) .
+               map (\(h, msg) -> safePutMsg h msg)
+
+-- each user has an MVar () which is used as a mutex to
+-- ensure no interleaving of messages.
+safePutMsg :: TMVar Handle -> ClientMessage -> IO ()
+safePutMsg lock msg = do
+  handle <- atomically $ takeTMVar lock
+  unsafePutMsg handle msg
+  atomically $ putTMVar lock handle
+
+-- puts a message on a handle without a lock. used
+-- in the login thread (since we haven't created an
+-- MVar for them yet)
+unsafePutMsg :: Handle -> ClientMessage -> IO ()
+unsafePutMsg handle msg = hPutStrLn handle (show msg)
+
+-- grabs the next message from the handle and parses it
+unsafeReadMessage :: Handle -> IO ServerMessage
+unsafeReadMessage handle = do
+  line <- hGetLine handle
+  let msg = parseMsg line in return msg
 
 buildPrivateMessage :: User ->
                        String ->
