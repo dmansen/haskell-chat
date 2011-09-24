@@ -103,7 +103,6 @@ dispatcherThread user users rooms handle = do
   let repeat = dispatcherThread user users rooms handle in do
     msg <- unsafeReadMessage handle
     (responseMsg, cont) <- atomically $ do
-      let name = (userName user)
       case msg of
         Login _ ->
           return (Error "Already logged in", repeat)
