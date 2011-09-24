@@ -64,7 +64,7 @@ loginThread users rooms handle = do
     (responseMsg, cont) <- do
       case msg of
         Login name -> do
-          user <- tryLogin users name handle
+          user <- atomically $ tryLogin users name handle
           case user of
             Just u ->
               return (Ok, trace (name ++ " logged in") $
@@ -102,7 +102,7 @@ dispatcherThread :: User ->
 dispatcherThread user users rooms handle = do
   let repeat = dispatcherThread user users rooms handle in do
     msg <- readMessage handle
-    (responseMsg, cont) <- do
+    (responseMsg, cont) <- atomically $ do
       let name = (userName user)
       case msg of
         Login _ ->
@@ -132,15 +132,14 @@ dispatcherExceptionHandler :: User ->
                               Handle ->
                               IO ()
 dispatcherExceptionHandler user users rooms handle = do
-  logout users rooms (userName user)
+  atomically $ logout users rooms (userName user)
   trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
 tryLogin :: UserStore ->
             String ->
             Handle ->
-            IO (Maybe User)
+            STM (Maybe User)
 tryLogin users name handle = do
-  atomically $ do
     user <- maybeGrabFromSTM users name
     case user of
       Just u -> return Nothing
@@ -153,8 +152,8 @@ tryLogin users name handle = do
 logout :: UserStore ->
           RoomStore ->
           String ->
-          IO (ClientMessage, IO ())
-logout userStore roomStore name = atomically $ do
+          STM (ClientMessage, IO ())
+logout userStore roomStore name = do
   maybeUser <- maybeGrabFromSTM userStore name
   userMap <- readTVar userStore
   writeTVar userStore (M.delete name userMap)
@@ -166,8 +165,8 @@ privateMessage :: UserStore ->
                   String ->
                   String ->
                   IO () ->
-                  IO (ClientMessage, IO ())
-privateMessage userStore from toName msg cont = atomically $ do
+                  STM (ClientMessage, IO ())
+privateMessage userStore from toName msg cont = do
   maybeUser <- maybeGrabFromSTM userStore toName
   case maybeUser of
     Just toUser ->
@@ -182,8 +181,8 @@ roomMessage :: RoomStore ->
                String ->
                String ->
                IO () ->
-               IO (ClientMessage, IO ())
-roomMessage roomStore user toRoom msg cont = atomically $ do
+               STM (ClientMessage, IO ())
+roomMessage roomStore user toRoom msg cont = do
   maybeRoom <- maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
     Just room ->
@@ -199,8 +198,8 @@ joinRoom :: UserStore ->
             User ->
             String ->
             IO () ->
-            IO (ClientMessage, IO ())
-joinRoom userStore roomStore user roomName cont = atomically $ do
+            STM (ClientMessage, IO ())
+joinRoom userStore roomStore user roomName cont = do
   room <- createRoomIfNeeded roomStore roomName
   let newUser = (user { rooms = room : (rooms user) } )
   let newRoom = (room { users = user : (users room) } )
@@ -213,8 +212,8 @@ partRoom :: UserStore ->
             User ->
             String ->
             IO () ->
-            IO (ClientMessage, IO ())
-partRoom userStore roomStore user rName cont = atomically $ do
+            STM (ClientMessage, IO ())
+partRoom userStore roomStore user rName cont = do
   room <- createRoomIfNeeded roomStore rName
   let newUser =
         (user { rooms = filter
