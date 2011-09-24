@@ -139,9 +139,8 @@ privateMessage :: UserStore ->
                   String ->
                   IO () ->
                   IO (ClientMessage, IO ())
-privateMessage userStore fromName toName msg cont = do
-  maybeUser <- atomically $
-               maybeGrabFromSTM userStore toName
+privateMessage userStore fromName toName msg cont = atomically $ do
+  maybeUser <- maybeGrabFromSTM userStore toName
   case maybeUser of
     Just toUser -> return (Ok,
                             (sendMessages [(buildPrivateMessage toUser fromName msg)]) >>
@@ -154,8 +153,8 @@ roomMessage :: RoomStore ->
                String ->
                IO () ->
                IO (ClientMessage, IO ())
-roomMessage roomStore fromName toRoom msg cont = do
-  maybeRoom <- atomically $ maybeGrabFromSTM roomStore toRoom
+roomMessage roomStore fromName toRoom msg cont = atomically $ do
+  maybeRoom <- maybeGrabFromSTM roomStore toRoom
   case maybeRoom of
     Just room -> return (Ok,
                           (sendMessages (buildRoomMessages room fromName msg)) >>
