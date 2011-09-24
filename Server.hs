@@ -20,7 +20,9 @@ server port = withSocketsDo $ do
   userStore <- atomically $ newTVar M.empty
   roomStore <- atomically $ newTVar M.empty
   serverSock <- trace "Server listening" $ listenOn (PortNumber port)
-  waitForClients serverSock userStore roomStore
+  (waitForClients serverSock userStore roomStore
+   `finally`
+   sClose serverSock)
 
 waitForClients :: Socket ->
                   UserStore ->
