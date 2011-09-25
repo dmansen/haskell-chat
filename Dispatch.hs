@@ -162,9 +162,12 @@ joinRoom userStore roomStore user roomName cont = do
   room <- createRoomIfNeeded roomStore roomName
   let newUser = (user { rooms = room : (rooms user) } )
       newRoom = (room { users = user : (users room) } )
-  updateSTM userStore newUser
-  updateSTM roomStore newRoom
-  return (Ok, cont)
+  if not (user `elem` (users room)) -- only add if necessary
+     then do
+          updateSTM userStore newUser
+          updateSTM roomStore newRoom
+          return (Ok, cont)
+     else return (Ok, cont)
 
 partRoom :: UserStore ->
             RoomStore ->
