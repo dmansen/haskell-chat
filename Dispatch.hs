@@ -166,7 +166,7 @@ joinRoom userStore roomStore user roomName cont = do
           updateSTM userStore newUser
           updateSTM roomStore newRoom
           return (Ok, cont)
-     else return (Ok, cont)
+     else return (Error ("Already in room: #" ++ roomName), cont)
 
 partRoom :: UserStore ->
             RoomStore ->
@@ -180,9 +180,12 @@ partRoom userStore roomStore user rName cont = do
         (user { rooms = filter (/= room) (rooms user) })
       newRoom =
         (room { users = filter (/= user) (users room) })
-  updateSTM userStore newUser
-  updateSTM roomStore newRoom
-  return (Ok, cont)
+  if user `elem` (users room)
+     then do
+       updateSTM userStore newUser
+       updateSTM roomStore newRoom
+       return (Ok, cont)
+     else return (Error ("Not in room: #" ++ rName), cont)
 
 -- send a list of messages. this spawns another thread so that
 -- our main handler thread doesn't need to wait for it to finish.
