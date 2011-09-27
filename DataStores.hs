@@ -60,7 +60,7 @@ removeUserFromRooms maybeUser userStore roomStore =
       -- which runs all of them in sequence.
       foldr (>>) (return ()) $ map (\newRoom -> updateSTM roomStore newRoom) $
         map (\r -> r {
-                users = filter (/= userName user) $ users r
+                users = filter (/= user) $ users r
                 }) userRooms
     Nothing -> return ()
 
