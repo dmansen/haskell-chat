@@ -51,7 +51,7 @@ loginThread userStore roomStore handle = do
 dispatcherThreadWrapper user userStore roomStore handle =
   dispatcherThread user userStore roomStore handle
   `finally` do
-    atomically $ logout userStore roomStore (userName user)
+    atomically $ logout userStore roomStore user
     trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
 
 -- This is the main handler loop for a client. It is fairly straightforward
@@ -110,14 +110,13 @@ tryLogin userStore name handle = do
 
 logout :: UserStore ->
           RoomStore ->
-          String ->
+          User ->
           STM (ClientMessage, IO ())
-logout userStore roomStore name = do
-  maybeUser <- maybeGrabFromSTM userStore name
+logout userStore roomStore user = do
   userMap <- readTVar userStore
-  writeTVar userStore (M.delete name userMap)
-  return (Ok, trace (name ++ " has left")
-              (atomically $ removeUserFromRooms maybeUser userStore roomStore))
+  writeTVar userStore (M.delete (userName user) userMap)
+  return (Ok, trace ((userName user) ++ " has left")
+              (atomically $ removeUserFromRooms user userStore roomStore))
 
 privateMessage :: UserStore ->
                   User ->
