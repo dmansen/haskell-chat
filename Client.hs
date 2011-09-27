@@ -7,6 +7,7 @@ import Message
 
 import Network
 import System.IO
+import System.Console.Readline
 import Text.ParserCombinators.Parsec
 
 main = client "localhost" (PortNumber 9000)
@@ -15,25 +16,30 @@ client host port = withSocketsDo $ do
   handle <- connectTo host port
   hSetBuffering handle LineBuffering
   hSetNewlineMode handle (NewlineMode CRLF CRLF)
-  forkIO $ loop handle
-  listener handle
+  forkIO $ (loop handle) `finally` (hClose handle)
+  (listener handle) `finally` (hClose handle)
   
-loop handle = (forever $ do
-  command <- getLine
-  case parse parseCommand "input" command of
-    Left err -> 
-      putStrLn ("Error: " ++ show err)
-    Right c -> do
-      hPutStrLn handle c)
-  `finally`
-  hClose handle
+loop handle = do
+  maybeCommand <- readline "% "
+  case maybeCommand of
+    Nothing -> return ()
+    Just "exit" -> return ()
+    Just command -> do
+      addHistory command
+      case parse parseCommand "input" command of
+        Left err -> do
+          putStrLn ("Error: " ++ show err)
+          loop handle
+        Right c -> do
+          hPutStrLn handle c
+          loop handle
   
 listener handle = forever $ do
   response <- hGetLine handle
   case parse parseResponse "response" response of
     Left err -> do
       putStrLn ("Error: " ++ show err)
-    Right action -> 
+    Right action -> do
       action
 
 parseCommand :: Parser String
@@ -103,6 +109,7 @@ parseRoomMsg = do
   user <- many (noneOf " ")
   string " #"
   room <- many (noneOf " ")
+  char ' '
   msg <- many anyChar
   eof
   return (putStrLn ("#" ++ room ++ " " ++ user ++ ": " ++ msg))
