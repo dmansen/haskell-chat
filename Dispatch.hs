@@ -178,11 +178,9 @@ partRoom :: UserStore ->
 partRoom userStore roomStore user rName cont = do
   room <- createRoomIfNeeded roomStore rName
   let newUser =
-        (user { rooms = filter (/= room) (rooms user)
-              })
+        (user { rooms = filter (/= room) (rooms user) })
       newRoom =
-        (room { users = filter (/= user) (users room)
-              })
+        (room { users = filter (/= user) (users room) })
   updateSTM userStore newUser
   updateSTM roomStore newRoom
   return (Ok, cont)
