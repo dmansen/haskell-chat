@@ -131,7 +131,7 @@ privateMessage userStore from toName msg cont = do
     Just toUser ->
       return (Ok,
               (sendMessages
-               [(buildPrivateMessage toUser (userName from) msg)]) >>
+               [(buildPrivateMessage toUser from msg)]) >>
               cont)
     Nothing -> return (Error "User is not logged in", cont)
 
@@ -147,7 +147,7 @@ roomMessage roomStore user toRoom msg cont = do
     Just room ->
       if user `elem` (users room)
          then return (Ok,
-                      (sendMessages (buildRoomMessages room (userName user) msg)) >>
+                      (sendMessages (buildRoomMessages room  user msg)) >>
                       cont)
          else return (Error ("Not in room: " ++ (roomName room)), cont)
     Nothing -> return (Error ("Not in room: " ++ toRoom), cont)
@@ -216,21 +216,21 @@ unsafeReadMessage handle = do
   let msg = parseMsg line in return msg
 
 buildPrivateMessage :: User ->
-                       String ->
+                       User ->
                        String ->
                        (TMVar Handle, ClientMessage)
-buildPrivateMessage to fromName msg =
-  let cMessage = CPrivateMessage fromName msg
+buildPrivateMessage to from msg =
+  let cMessage = CPrivateMessage (userName from) msg
       conn = connection to in
     (conn `seq` conn, cMessage `seq` cMessage)
 
 buildRoomMessages :: Room ->
-                     String ->
+                     User ->
                      String ->
                      [(TMVar Handle, ClientMessage)]
 buildRoomMessages room from msg =
   map (\u ->
-          let cMessage = CRoomMessage from (roomName room) msg
+          let cMessage = CRoomMessage (userName from) (roomName room) msg
               conn = connection u in
             (conn `seq` conn, cMessage `seq` cMessage))
-  (filter (\u -> userName u /= from) (users room))
+  (filter (/= from) (users room))
