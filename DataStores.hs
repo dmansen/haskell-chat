@@ -10,13 +10,19 @@ import System.IO
 data Room = Room {
   roomName :: String,
   users :: [User]
-} deriving (Eq)
+}
+
+instance Eq Room where
+  r == q = (roomName r) == (roomName q)
 
 data User = User {
   userName :: String,
   connection :: TMVar Handle,
   rooms :: [Room]
-} deriving (Eq)
+}
+
+instance Eq User where
+  u == p = (userName u) == (userName p)
 
 class StringKey a where
   stringKey :: a -> String
@@ -45,6 +51,41 @@ createRoomIfNeeded roomStore name = do
           newMap = M.insert (roomName newRoom) newRoom roomStoreMap
       writeTVar roomStore newMap
       return newRoom
+
+addUserToRoom :: UserStore ->
+                 RoomStore ->
+                 User ->
+                 String ->
+                 STM (User, Bool)
+addUserToRoom userStore roomStore user roomName = do
+  room <- createRoomIfNeeded roomStore roomName
+  let newUser = (user { rooms = room : (rooms user) } )
+      newRoom = (room { users = user : (users room) } )
+  if not (user `elem` (users room)) -- only add if necessary
+     then do
+       updateSTM userStore newUser
+       updateSTM roomStore newRoom
+       return (newUser, True)
+     else return (user, False)
+
+
+removeUserFromRoom :: UserStore ->
+                      RoomStore ->
+                      User ->
+                      String ->
+                      STM (User, Bool)
+removeUserFromRoom userStore roomStore user roomName = do
+  room <- createRoomIfNeeded roomStore roomName
+  let newUser =
+        (user { rooms = filter (/= room) (rooms user) })
+      newRoom =
+        (room { users = filter (/= user) (users room) })
+  if user `elem` (users room)
+     then do
+       updateSTM userStore newUser
+       updateSTM roomStore newRoom
+       return (newUser, True)
+     else return (user, False)
 
 removeUserFromRooms :: User ->
                        UserStore ->

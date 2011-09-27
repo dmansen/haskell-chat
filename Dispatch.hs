@@ -38,7 +38,7 @@ loginThread userStore roomStore handle = do
           case user of
             Just u ->
               return (Ok, trace (name ++ " logged in") $
-                          dispatcherThreadWrapper u userStore roomStore handle)
+                          dispatcherThreadWrapper userStore roomStore handle u)
             Nothing ->
               return (Error "Username already in use", repeat)
         otherwise ->
@@ -48,8 +48,13 @@ loginThread userStore roomStore handle = do
 
 -- same comment above as loginThreadWrapper - recursion forces us to
 -- wrap this
-dispatcherThreadWrapper user userStore roomStore handle =
-  dispatcherThread user userStore roomStore handle
+dispatcherThreadWrapper :: UserStore ->
+                           RoomStore ->
+                           Handle ->
+                           User ->
+                           IO ()
+dispatcherThreadWrapper userStore roomStore handle user =
+  dispatcherThread userStore roomStore handle user
   `finally` do
     atomically $ logout userStore roomStore user
     trace ("Thread for " ++ (userName user) ++ " dying.") $ return ()
@@ -61,18 +66,18 @@ dispatcherThreadWrapper user userStore roomStore handle =
 -- messages to other users, etc). We separate them so that we
 -- can respond to the user quickly and do all of the heavy lifting
 -- of dispatching messages in a different thread.
-dispatcherThread :: User ->
-                    UserStore ->
+dispatcherThread :: UserStore ->
                     RoomStore ->
                     Handle ->
+                    User ->
                     IO ()
-dispatcherThread user userStore roomStore handle =
-  let repeat = dispatcherThread user userStore roomStore handle in do
+dispatcherThread userStore roomStore handle user =
+  let repeat = dispatcherThread userStore roomStore handle in do
     msg <- unsafeReadMessage handle
     (responseMsg, cont) <- atomically $ do
       case msg of
         Login _ ->
-          return (Error "Already logged in", repeat)
+          return (Error "Already logged in", repeat user)
         SPrivateMessage to msg ->
           privateMessage userStore user to msg repeat
         SRoomMessage room msg ->
@@ -86,7 +91,7 @@ dispatcherThread user userStore roomStore handle =
           -- (see the finally block above, and exception handler below)
           return (Ok, return ())
         Invalid err ->
-          return (Error ("Invalid Command: " ++ err), repeat)
+          return (Error ("Invalid Command: " ++ err), repeat user)
     sendMessages [(connection user, responseMsg)]
     cont
 
@@ -122,7 +127,7 @@ privateMessage :: UserStore ->
                   User ->
                   String ->
                   String ->
-                  IO () ->
+                  (User -> IO ()) ->
                   STM (ClientMessage, IO ())
 privateMessage userStore from toName msg cont = do
   maybeUser <- maybeGrabFromSTM userStore toName
@@ -131,14 +136,14 @@ privateMessage userStore from toName msg cont = do
       return (Ok,
               (sendMessages
                [(buildPrivateMessage toUser from msg)]) >>
-              cont)
-    Nothing -> return (Error "User is not logged in", cont)
+              cont from)
+    Nothing -> return (Error "User is not logged in", cont from)
 
 roomMessage :: RoomStore ->
                User ->
                String ->
                String ->
-               IO () ->
+               (User -> IO ()) ->
                STM (ClientMessage, IO ())
 roomMessage roomStore user toRoom msg cont = do
   maybeRoom <- maybeGrabFromSTM roomStore toRoom
@@ -146,46 +151,34 @@ roomMessage roomStore user toRoom msg cont = do
     Just room ->
       if user `elem` (users room)
          then return (Ok,
-                      (sendMessages (buildRoomMessages room  user msg)) >>
-                      cont)
-         else return (Error ("Not in room: " ++ (roomName room)), cont)
-    Nothing -> return (Error ("Not in room: " ++ toRoom), cont)
+                      (sendMessages (buildRoomMessages room user msg)) >>
+                      cont user)
+         else return (Error ("Not in room: " ++ (roomName room)), cont user)
+    Nothing -> return (Error ("Not in room: " ++ toRoom), cont user)
 
 joinRoom :: UserStore ->
             RoomStore ->
             User ->
             String ->
-            IO () ->
+            (User -> IO ()) ->
             STM (ClientMessage, IO ())
 joinRoom userStore roomStore user roomName cont = do
-  room <- createRoomIfNeeded roomStore roomName
-  let newUser = (user { rooms = room : (rooms user) } )
-      newRoom = (room { users = user : (users room) } )
-  if not (user `elem` (users room)) -- only add if necessary
-     then do
-          updateSTM userStore newUser
-          updateSTM roomStore newRoom
-          return (Ok, cont)
-     else return (Error ("Already in room: #" ++ roomName), cont)
+  (newUser, wasSuccessful) <- addUserToRoom userStore roomStore user roomName
+  if wasSuccessful
+    then return (Ok, cont newUser)
+    else return (Error ("Already in room: #" ++ roomName), cont user)
 
 partRoom :: UserStore ->
             RoomStore ->
             User ->
             String ->
-            IO () ->
+            (User -> IO ()) ->
             STM (ClientMessage, IO ())
-partRoom userStore roomStore user rName cont = do
-  room <- createRoomIfNeeded roomStore rName
-  let newUser =
-        (user { rooms = filter (/= room) (rooms user) })
-      newRoom =
-        (room { users = filter (/= user) (users room) })
-  if user `elem` (users room)
-     then do
-       updateSTM userStore newUser
-       updateSTM roomStore newRoom
-       return (Ok, cont)
-     else return (Error ("Not in room: #" ++ rName), cont)
+partRoom userStore roomStore user roomName cont = do
+  (newUser, wasSuccessful) <- removeUserFromRoom userStore roomStore user roomName
+  if wasSuccessful
+    then return (Ok, cont newUser)
+    else return (Error ("Not in room: #" ++ roomName), cont user)
 
 -- send a list of messages. this spawns another thread so that
 -- our main handler thread doesn't need to wait for it to finish.
